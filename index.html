@@ -1,0 +1,3065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>AC Leakage Monitoring Dashboard</title>
+  <link rel="icon" type="image/jpeg" href="pg-logo.jpg"/>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart data labels plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+  <!-- XLSX (Excel export) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Firebase compat -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f2f5;min-height:100vh;overflow:hidden}
+
+    /* Header */
+    .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:10px 0;box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+    .header-content{max-width:1920px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+    .brand-left{display:flex;align-items:center;gap:10px}
+    .brand-left img{height:38px;border-radius:6px;object-fit:cover}
+    .brand-left h1{font-size:19px;line-height:1;color:#fff}
+    .nav-buttons{display:flex;gap:8px;align-items:center}
+    .btn{background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.25);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px}
+    .btn-excel{background:#217346;border:none;cursor:pointer}
+.btn-excel:hover{opacity:0.95}
+
+    .dropdown{position:relative;display:inline-block}
+    .dropdown-content{display:none;position:absolute;right:0;background:#fff;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.15);border-radius:6px;z-index:1000;overflow:hidden}
+    .dropdown-content a{color:#333;padding:10px 16px;text-decoration:none;display:block;font-size:13px;font-weight:600;transition:background 0.2s}
+    .dropdown-content a:hover{background:#f0f2f5}
+    .dropdown:hover .dropdown-content{display:block}
+    .dropdown:hover .btn-excel{opacity:0.95}
+    .access-indicator{
+      background:rgba(255,255,255,0.2);
+      color:#fff;
+      border:1px solid rgba(255,255,255,0.35);
+      padding:6px 10px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:700;
+      max-width:260px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .live-indicator{display:flex;align-items:center;gap:5px;margin-right:10px}
+    .live-dot{width:10px;height:10px;border-radius:50%;background:#4CAF50;animation:liveBlink 1s infinite}
+    .live-text{color:#fff;font-weight:600;font-size:14px;animation:liveBlink 1s infinite}
+
+    @keyframes liveBlink{
+      0%,50%{opacity:1}
+      51%,100%{opacity:0.3}
+    }
+
+    .container{max-width:1920px;margin:0 auto;padding:0 20px;height:calc(100vh - 58px);overflow-y:auto;position:relative}
+
+    /* Stats Grid - 7 cards + QR - STICKY/FROZEN */
+    .stats-grid{display:grid;grid-template-columns:repeat(7,1fr) 90px;gap:10px;margin-bottom:10px;position:sticky;top:0;z-index:100;background:#f0f2f5;padding:8px 0}
+    .stat-card{background:#fff;padding:10px 8px;border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,0.06);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+    .stat-card .label{font-weight:900;color:#000;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+    .stat-value{font-weight:900;font-size:28px;color:#000}
+
+.plant-breakdown{font-size:13px;font-weight:900;line-height:1.1;margin-top:2px}
+    .plant-breakdown div{padding:1px 0}
+
+.stat-card.blue{background:linear-gradient(135deg,#B2DAFB 0%,#A1D2FA 100%);color:#000}
+    .stat-card.red{background:linear-gradient(135deg,#F7A9A8 0%,#F29C9A 100%);color:#000}
+    .stat-card.orange{background:linear-gradient(135deg,#FFDBA6 0%,#FFD393 100%);color:#000}
+    .stat-card.green{background:linear-gradient(135deg,#C0E3C2 0%,#B3DDB5 100%);color:#000}
+    .stat-card.purple{background:linear-gradient(135deg,#DDB4E4 0%,#D5A3DE 100%);color:#000}
+    .stat-card.teal{background:linear-gradient(135deg,#A6E8F0 0%,#93E3ED 100%);color:#000}
+    .stat-card.indigo{background:linear-gradient(135deg,#BCB3E5 0%,#ADA5E0 100%);color:#000}
+
+    /* QR card */
+    .qr-image{max-width:80px;display:block;margin-top:4px}
+
+    /* Chart grids */
+    .chart-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+    .chart-grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px}
+    
+    .chart-container{background:#fff;padding:12px;border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,0.06);display:flex;flex-direction:column;height:300px}
+    
+    .chart-wrapper{flex:1;position:relative;min-height:250px}
+    .chart-container h3{margin-bottom:8px;font-size:13px;color:#333;font-weight:700}
+
+    /* Operator Leaderboard */
+    .leaderboard-container{background:#fff;padding:12px;border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,0.06);height:300px;overflow-x:auto}
+    .leaderboard-container h3{margin-bottom:8px;font-size:13px;color:#333;font-weight:700}
+    .leaderboard-content{overflow-y:auto;max-height:260px}
+    .leaderboard-table{width:100%;font-size:11px;white-space:nowrap}
+    .leaderboard-table th{background:#f8f9fa;padding:6px 8px;text-align:center;font-weight:700;color:#444;font-size:10px;position:sticky;top:0}
+    .leaderboard-table td{padding:6px 8px;border-bottom:1px solid #eee;text-align:center}
+    .leaderboard-table tr:hover{background:#f8f9fa}
+    .rank-badge{display:inline-block;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-weight:700;font-size:12px;color:#fff}
+    .rank-1{background:#f44336}
+    .rank-2{background:#FF9800}
+    .rank-3{background:#FFC107}
+    .rank-other{background:#9E9E9E}
+
+    /* Reports table */
+    .reports-box{background:#fff;padding:12px;border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,0.06);margin-top:10px;height:300px}
+    .reports-box h3{margin-bottom:8px;font-size:13px;color:#333;font-weight:700}
+    .table-wrapper{overflow-y:auto;max-height:260px}
+    table{width:100%;border-collapse:collapse;font-size:11px}
+    th{background:#f8f9fa;padding:8px;text-align:left;font-weight:700;color:#444;position:sticky;top:0;z-index:1}
+    td{padding:8px;border-bottom:1px solid #eee}
+
+    .severity-badge{padding:4px 10px;border-radius:12px;font-weight:700;font-size:10px}
+    .severity-critical{background:#ffebee;color:#c62828}
+    .severity-major{background:#fff3e0;color:#ef6c00}
+    .severity-minor{background:#fff9c4;color:#f57f17}
+
+    .connection-status {
+      position: fixed;
+      bottom: 15px;
+      right: 15px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      z-index: 1000;
+      display: block;
+    }
+    .status-connected {
+      background: #4CAF50;
+      animation: connectedBlink 2s infinite;
+    }
+    .status-disconnected {
+      background: #f44336;
+      animation: disconnectedBlink 1s infinite;
+    }
+    @keyframes connectedBlink {
+      0%, 70% { opacity: 1; }
+      71%, 100% { opacity: 0.3; }
+    }
+    @keyframes disconnectedBlink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0.2; }
+    }
+
+    /* Login Screen */
+    .login-screen {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .login-container {
+      background: #fff;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      max-width: 400px;
+      width: 100%;
+    }
+    .login-header h1 {
+      color: #333;
+      font-size: 24px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .login-header p {
+      color: #666;
+      font-size: 14px;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .login-form input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 15px;
+      transition: border-color 0.3s;
+    }
+    .login-form input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    .login-btn {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.3s;
+    }
+    .login-btn:hover {
+      opacity: 0.9;
+    }
+    .login-error {
+      background: #ffebee;
+      color: #c62828;
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 15px;
+      font-size: 13px;
+      text-align: center;
+    }
+    .login-help{font-size:12px;color:#666;margin-top:8px;text-align:center}
+    .otp-row{display:flex;gap:8px}
+    .otp-row input{margin-bottom:0}
+    .muted{font-size:12px;color:#666}
+    .settings-modal{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:none;align-items:center;justify-content:center;z-index:4000}
+    .settings-card{background:#fff;border-radius:12px;max-width:900px;width:94%;padding:16px;max-height:85vh;overflow:auto}
+    .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .settings-card textarea,.settings-card input{width:100%;padding:10px;border:1px solid #ddd;border-radius:6px}
+    .tag{background:#fff;color:#333;border:1px solid #ddd;padding:4px 8px;border-radius:999px;font-size:11px}
+    .account-menu{position:relative}
+    .account-btn{background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.25);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px}
+    .account-dropdown{display:none;position:absolute;right:0;top:36px;background:#fff;color:#333;min-width:220px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.2);padding:10px;z-index:2000}
+    .account-menu.open .account-dropdown{display:block}
+    .settings-block{border:1px solid #eee;border-radius:8px;padding:10px;margin-bottom:10px}
+    .settings-block h4{margin-bottom:8px;font-size:13px}
+    .settings-block .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+    .settings-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+    .settings-tab-btn{background:#eef2ff;color:#334155;border:1px solid #c7d2fe;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer}
+    .settings-tab-btn.active{background:#5a67d8;color:#fff;border-color:#5a67d8}
+    .settings-panel{display:none}
+    .settings-panel.active{display:block}
+    .notice{position:fixed;top:70px;right:18px;z-index:5000;display:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 6px 16px rgba(0,0,0,0.18)}
+    .notice.success{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9}
+    .notice.error{background:#ffebee;color:#c62828;border:1px solid #ffcdd2}
+    .notice.info{background:#e3f2fd;color:#1565c0;border:1px solid #bbdefb}
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #888;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #555;
+    }
+  </style>
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="loginScreen" class="login-screen">
+    <div class="login-container">
+      <div class="login-header">
+        <h1>AC Leakage Monitoring System</h1>
+        <p>Login with authorized email</p>
+      </div>
+      <div class="login-form">
+        <input type="email" id="loginEmail" placeholder="Enter your email" onkeydown="handleLoginKeydown(event)">
+        <button onclick="sendOtp()" class="login-btn" id="sendOtpBtn">Send OTP</button>
+        <div class="otp-row" id="otpRow" style="margin-top:10px;display:none">
+          <input type="text" id="loginOtp" placeholder="Enter OTP">
+          <button onclick="verifyOtpLogin()" class="btn" style="background:#667eea">Verify OTP</button>
+        </div>
+        <div class="login-help">OTP will be sent on authorized email.</div>
+        <div id="loginError" class="login-error" style="display:none;">Login failed.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Dashboard (hidden initially) -->
+  <div id="mainDashboard" style="display:none;">
+    <div class="header">
+      <div class="header-content">
+        <div class="brand-left">
+          <img src="pg-logo.jpg" alt="Company logo" onerror="this.style.display='none'">
+          <h1>AC Leakage Monitoring Dashboard</h1>
+        </div>
+
+        <div class="nav-buttons">
+          <div class="live-indicator">
+            <span class="live-dot"></span>
+            <span class="live-text">LIVE</span>
+          </div>
+          <button class="access-indicator" id="accessIndicatorBtn" title="Current location scope">Location: -</button>
+<div class="dropdown">
+            <button class="btn btn-excel">📊 Excel ▼</button>
+            <div class="dropdown-content">
+              <a href="javascript:void(0)" onclick="protectedExportToExcel('overall')">Overall Leakages</a>
+              <a href="javascript:void(0)" onclick="protectedExportToExcel('lastmonth')">Last Month Only</a>
+            </div>
+          </div>
+          <button class="btn" id="settingsBtn" onclick="openSettings()" style="display:none;background:#2e7d32;">⚙ Settings</button>
+          <button class="btn" onclick="refreshDashboard()">🔄 Refresh</button>
+          <div class="account-menu" id="accountMenu">
+            <button class="account-btn" onclick="toggleAccountMenu()">👤 Account</button>
+            <div class="account-dropdown">
+              <div class="muted" style="margin-bottom:8px">Signed in as</div>
+              <div id="accountEmail" style="font-weight:700;margin-bottom:10px">-</div>
+              <button class="btn" onclick="logoutUser()" style="background:#f44336;width:100%;">Logout</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container">
+<!-- Stats + QR -->
+      <div class="stats-grid">
+        <div class="stat-card blue">
+          <div class="label">Today's</div>
+          <div class="stat-value" id="todayLeakages">0</div>
+        </div>
+
+<div class="stat-card red">
+          <div class="label">Yesterday</div>
+          <div class="stat-value" id="yesterdayTotal">0</div>
+          <div class="plant-breakdown" id="yesterdayBreakdown"></div>
+        </div>
+
+        <div class="stat-card teal">
+          <div class="label">Avg Daily</div>
+          <div class="stat-value" id="avgDaily">0</div>
+        </div>
+
+        <div class="stat-card purple">
+          <div class="label" id="currentMonthTotalLabel">Total</div>
+          <div class="stat-value" id="thisMonthLeakages">0</div>
+        </div>
+
+        <div class="stat-card orange">
+          <div class="label" id="lastMonthTotalLabel">Total</div>
+          <div class="stat-value" id="lastMonthTotal">0</div>
+        </div>
+
+        <div class="stat-card green">
+          <div class="label">Aug'25 to Till Date</div>
+          <div class="stat-value" id="runningYearTotal">0</div>
+        </div>
+
+        <div class="stat-card" style="background:linear-gradient(135deg,#FF6B6B 0%,#FF5252 100%);color:#fff">
+          <div class="label">M-o-M</div>
+          <div class="stat-value" id="momChange">0%</div>
+        </div>
+
+        <div class="stat-card">
+          <img src="QR_CODE.png" alt="QR Code" class="qr-image" onerror="this.parentElement.innerHTML='<div style=\'color:#999;font-size:9px\'>QR Code</div>'">
+        </div>
+      </div>
+
+      <!-- Row 1: Plant, Defect, IDU (3 columns - 300px height) -->
+      <div class="chart-grid-3">
+        <div class="chart-container">
+          <h3>🏭 Plant Distribution</h3>
+          <div class="chart-wrapper"><canvas id="plantChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+          <h3>🔍 Defect Type Distribution</h3>
+          <div class="chart-wrapper"><canvas id="defectChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+          <h3 id="iduJointTitle">🔩 Indoor Joint Pareto</h3>
+          <div class="chart-wrapper"><canvas id="iduJointChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Row 2: Shift, Action, ODU (3 columns - 300px height) -->
+      <div class="chart-grid-3">
+        <div class="chart-container">
+          <h3>🌅 Shift-wise Contribution</h3>
+          <div class="chart-wrapper"><canvas id="severityChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+          <h3>✅ Action Distribution</h3>
+          <div class="chart-wrapper"><canvas id="actionChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+          <h3 id="oduJointTitle">🔩 Outdoor Joint Pareto</h3>
+          <div class="chart-wrapper"><canvas id="oduJointChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Row 3: 6-Month Trend + Top Contributors (2 columns - 300px height) -->
+      <div class="chart-grid-2">
+        <div class="chart-container">
+          <h3>📊 6-Month Leakage Trend</h3>
+          <div class="chart-wrapper"><canvas id="sixMonthTrendChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+          <h3>🔝 Top 6-Month Contributors</h3>
+          <div class="chart-wrapper"><canvas id="topContributorsChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Row 4: Production Line + Plant Monthly (2 columns - 300px height) -->
+      <div class="chart-grid-2">
+        <div class="chart-container">
+          <h3>📊 Production Line Comparison</h3>
+          <div class="chart-wrapper"><canvas id="lineComparisonChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+          <h3>🏢 Plant-wise Monthly Trend</h3>
+          <div class="chart-wrapper"><canvas id="plantMonthlyChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Row 5: Operator Leaderboard + 7-Day Trend (2 columns - 300px height) -->
+      <div class="chart-grid-2">
+<div class="leaderboard-container">
+          <h3>👥 Operator Monitoring Last 6 Months</h3>
+          <div class="leaderboard-content">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Operator</th>
+                  <th>Total</th>
+                  <th id="month1Header">Jan-26</th>
+                  <th id="month2Header">Dec-25</th>
+                  <th id="month3Header">Nov-25</th>
+                  <th id="month4Header">Oct-25</th>
+                  <th id="month5Header">Sep-25</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboardTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <h3>📈 7-Day Leakage Trend</h3>
+          <div class="chart-wrapper"><canvas id="trendChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Reports Table (300px height) -->
+      <div class="reports-box">
+        <h3>Recent Reports (Last 50)</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Unit</th>
+                <th>Line</th>
+                <th>Plant</th>
+                <th>Defect</th>
+                <th>Joint</th>
+                <th>Severity</th>
+                <th>Shift</th>
+                <th>Action</th>
+                <th>Operator</th>
+              </tr>
+            </thead>
+            <tbody id="reportsTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connection Status -->
+  <div class="connection-status" id="connectionStatus"></div>
+  <div id="appNotice" class="notice info"></div>
+  <div id="settingsModal" class="settings-modal">
+    <div class="settings-card">
+      <h3 style="margin-bottom:10px">Access & Hierarchy Settings</h3>
+      <p class="muted" style="margin-bottom:10px">IT Admin/Admin can manage hierarchy and access without editing JSON.</p>
+      <div class="settings-tabs">
+        <button class="settings-tab-btn active" data-tab="employees" onclick="switchSettingsTab('employees')">Employees & Admins</button>
+        <button class="settings-tab-btn" data-tab="hierarchy" onclick="switchSettingsTab('hierarchy')">Hierarchy</button>
+        <button class="settings-tab-btn" data-tab="qr" onclick="switchSettingsTab('qr')">QR Report</button>
+        <button class="settings-tab-btn" data-tab="logs" onclick="switchSettingsTab('logs')">Audit Logs</button>
+      </div>
+      <div>
+        <div class="settings-panel active" data-panel="hierarchy">
+        <div class="settings-block">
+          <h4>Hierarchy: Location → Plant → Line</h4>
+          <p class="muted" style="margin-bottom:8px">Add a location first, then add a plant under that location, and finally add lines under that plant.</p>
+          <div class="row" style="grid-template-columns:1fr 1fr auto">
+            <input id="newLocationName" type="text" placeholder="e.g. Noida">
+            <span></span>
+            <button type="button" class="btn" onclick="addNewLocation()" style="background:#5a67d8">Add Location</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <select id="hierPickLocation"><option value="">Select location</option></select>
+            <input id="newPlantUnderLoc" type="text" placeholder="e.g. Plant-1">
+            <button type="button" class="btn" onclick="addPlantUnderLocation()" style="background:#5a67d8">Add Plant</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <select id="hierLineLocation" onchange="syncLinePlantDropdowns()"><option value="">Select Location</option></select>
+            <select id="hierLinePlant"><option value="">Select Plant</option></select>
+            <input id="newLineName" type="text" placeholder="e.g. Line-A">
+          </div>
+          <button type="button" class="btn" onclick="addLineUnderPlant()" style="margin-top:8px;background:#5a67d8">Add Line</button>
+          <h4 style="margin-top:10px">Current Structure</h4>
+          <div id="currentStructureBox" style="max-height:180px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px;font-size:12px"></div>
+        </div>
+        </div>
+        <div class="settings-panel" data-panel="qr">
+        <div class="settings-block">
+          <h4>Defect types (per location — QR form)</h4>
+          <div class="row">
+            <select id="defectPickLocation"><option value="">Select location</option></select>
+            <input id="defectListCsv" type="text" placeholder="Comma separated (e.g. Assembly Line Defect, HE Shop Defect)">
+            <button type="button" class="btn" onclick="addLocationDefects()" style="background:#5a67d8">Set defects</button>
+          </div>
+        </div>
+        <div class="settings-block">
+          <h4>QR Product Form Configuration</h4>
+          <div class="row">
+            <select id="productCfgLocation"><option value="">Select location (optional)</option></select>
+            <input id="productCfgName" type="text" placeholder="Product name (e.g. Window Line)">
+            <input id="productCfgLines" type="text" placeholder="Production lines CSV">
+          </div>
+          <div class="row" style="margin-top:8px">
+            <input id="productCfgDefects" type="text" placeholder="Defect types CSV (optional override)">
+            <input id="productCfgStages" type="text" placeholder="Detection stages CSV">
+            <input id="productCfgJoints" type="text" placeholder="Joints CSV (e.g. J1:Desc, J2:Desc)">
+          </div>
+          <div class="row" style="margin-top:8px">
+            <input id="productCfgImg1" type="text" placeholder="Image 1 URL or file name">
+            <input id="productCfgImg2" type="text" placeholder="Image 2 URL or file name">
+            <button type="button" class="btn" onclick="addOrUpdateProductConfig()" style="background:#5a67d8">Add / Update Product</button>
+          </div>
+        </div>
+        </div>
+        <div class="settings-panel" data-panel="employees">
+        <div class="settings-block">
+          <h4>Access Overview</h4>
+          <div class="row" style="grid-template-columns:1fr 1fr;align-items:center">
+            <div id="employeeAccessCount" class="muted">Employees: 0</div>
+            <div id="adminAccessCount" class="muted">Admins: 0</div>
+          </div>
+          <div style="max-height:160px;overflow:auto;border:1px solid #eee;border-radius:8px;margin-top:8px">
+            <table style="width:100%;font-size:12px">
+              <thead><tr><th>Email</th><th>Role</th><th>Locations</th><th>Plants</th></tr></thead>
+              <tbody id="accessSummaryBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="settings-block">
+          <h4>Employee Access (QR Report)</h4>
+          <div class="row">
+            <input id="empEmail" type="email" placeholder="employee@company.com">
+            <select id="empPickLocation" onchange="syncEmpPlantDropdown()"><option value="">Location</option></select>
+            <select id="empPickPlant"><option value="">Plant</option></select>
+          </div>
+          <button type="button" class="btn" onclick="addEmployeeAccess()" style="margin-top:8px;background:#5a67d8">Add / Update Employee</button>
+        </div>
+        <div class="settings-block">
+          <h4>Admin Access (Dashboard)</h4>
+          <div class="row">
+            <input id="adminEmail" type="email" placeholder="admin@company.com">
+            <select id="adminRoleSelect">
+              <option value="full_access">full_access</option>
+              <option value="location_admin">location_admin</option>
+              <option value="plant_admin">plant_admin</option>
+              <option value="admin">admin</option>
+              <option value="it_admin">it_admin</option>
+            </select>
+            <select id="adminScopeLocation"><option value="">Scope: location (for location_admin)</option></select>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <select id="adminScopePlant"><option value="">Scope: plant (for plant_admin)</option></select>
+            <span class="muted" style="grid-column:span 2">Use scope dropdowns according to the selected role.</span>
+          </div>
+          <button type="button" class="btn" onclick="addAdminAccess()" style="margin-top:8px;background:#5a67d8">Add / Update Admin</button>
+        </div>
+        <div class="settings-block">
+          <h4>Security Passwords (From HTML)</h4>
+          <div class="row">
+            <input id="settingsPinInput" type="text" placeholder="Settings password">
+            <input id="excelPinInput" type="text" placeholder="Excel password">
+            <button type="button" class="btn" onclick="applyPinChangesInUI()" style="background:#5a67d8">Apply In UI</button>
+          </div>
+          <span class="muted">These passwords are applied from index settings UI and saved to config on Save.</span>
+        </div>
+        </div>
+        <div class="settings-panel" data-panel="logs">
+        <div class="settings-block">
+          <h4>Audit Logs</h4>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <button type="button" class="btn" onclick="loadAuditLogs()" style="background:#5a67d8">Refresh Logs</button>
+            <span class="muted">Shows recent admin login and employee report submit activity.</span>
+          </div>
+          <div style="max-height:240px;overflow:auto;border:1px solid #eee;border-radius:8px">
+            <table style="width:100%;font-size:12px">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Activity</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody id="auditLogsBody"></tbody>
+            </table>
+          </div>
+        </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn" onclick="closeSettings()" style="background:#9e9e9e">Close</button>
+        <button class="btn" onclick="saveSettings()" style="background:#2e7d32">Save</button>
+      </div>
+    </div>
+  </div>
+  <div id="pinModal" class="settings-modal" style="display:none">
+    <div class="settings-card" style="max-width:420px">
+      <h3 style="margin-bottom:6px" id="pinTitle">Enter password</h3>
+      <p class="muted" style="margin-bottom:10px" id="pinSubtitle">This action is protected.</p>
+      <input id="pinInput" type="password" placeholder="Password" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px">
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn" onclick="closePinModal(false)" style="background:#9e9e9e">Cancel</button>
+        <button class="btn" onclick="closePinModal(true)" style="background:#5a67d8">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===========================
+    // FIREBASE CONFIGURATION
+    // ===========================
+    const firebaseConfig = {
+      apiKey: "AIzaSyDm9MtMZhgs9bS3NJmhAxLNRSrilgjhnyc",
+      authDomain: "ac-leakage-monitor-418ed.firebaseapp.com",
+      projectId: "ac-leakage-monitor-418ed",
+      storageBucket: "ac-leakage-monitor-418ed.firebasestorage.app",
+      messagingSenderId: "784830606580",
+      appId: "1:784830606580:web:4f3e4c8bcc75f8247cc2a1",
+      databaseURL: "https://ac-leakage-monitor-418ed-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+
+    let database = null;
+    let currentData = [];
+    const SHEET_FETCH_COOLDOWN_MS = 30000;
+    let lastSheetFetchAt = 0;
+    let sheetFetchInFlight = null;
+    let dashboardCharts = {};
+    let isConnected = false;
+    let firebaseListenerBound = false;
+    let lastDataSignature = '';
+    let refreshRafId = null;
+
+    try {
+      if (firebaseConfig && firebaseConfig.apiKey && firebaseConfig.apiKey !== 'YOUR_API_KEY') {
+        firebase.initializeApp(firebaseConfig);
+        database = firebase.database();
+        console.log('Firebase Realtime Database initialized');
+        
+        const connectedRef = database.ref('.info/connected');
+        connectedRef.on('value', (snap) => {
+          isConnected = snap.val() === true;
+          updateConnectionStatus(isConnected);
+        });
+      } else {
+        console.error('Firebase not configured');
+        updateConnectionStatus(false);
+      }
+    } catch (err) {
+      console.error('Firebase init error:', err);
+      updateConnectionStatus(false);
+    }
+
+    const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
+    const APP_STATE = {
+      user: null,
+      profile: null,
+      config: null
+    };
+    let isAuthenticated = false;
+    let sheetReportsCache = [];
+    function isMobileClient() {
+      const ua = navigator.userAgent || '';
+      const byUA = /Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(ua);
+      const byWidth = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+      return byUA || byWidth;
+    }
+    function blockMobileIndexAccess() {
+      document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f3f4f6;padding:20px;font-family:Segoe UI,Arial,sans-serif"><div style="max-width:420px;background:#fff;padding:20px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.12);text-align:center"><h2 style="margin:0 0 8px;color:#111827">Desktop Access Only</h2><p style="margin:0;color:#4b5563">Dashboard is available only on desktop/laptop. Please use the QR Report page on mobile.</p></div></div>';
+    }
+
+    function normalizeEmail(v){ return String(v || '').trim().toLowerCase(); }
+    function emailKey(email){ return normalizeEmail(email).replace(/\./g, ','); }
+    function parseList(input){ const s=String(input||'').trim(); if(!s) return ['*']; return s.split(',').map(x=>x.trim()).filter(Boolean); }
+    function toScopeList(value) {
+      if (Array.isArray(value)) {
+        return value.map((x) => String(x || '').trim()).filter(Boolean);
+      }
+      const raw = String(value || '').trim();
+      if (!raw) return ['*'];
+      if (raw === '*') return ['*'];
+      return raw.split(',').map((x) => String(x || '').trim()).filter(Boolean);
+    }
+    function canonicalLocationName(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      const low = raw.toLowerCase();
+      if (low === 'pune') return 'pune';
+      if (low === 'supa') return 'supa';
+      return low;
+    }
+    const IS_LOCAL_DEV = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+    const OTP_API_URL = IS_LOCAL_DEV ? 'http://localhost:8888/api/otp' : '/api/otp';
+    async function otpRequest(action, payload) {
+      let response;
+      try {
+        response = await fetch(OTP_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, ...payload })
+        });
+      } catch (networkErr) {
+        if (IS_LOCAL_DEV) {
+          throw new Error('Local OTP proxy not running. Start app with "netlify dev" (uses localhost:8888).');
+        }
+        throw networkErr;
+      }
+      if (response.status === 405 && IS_LOCAL_DEV) {
+        throw new Error('Live Server cannot serve /api/otp. Use "netlify dev" for local OTP testing.');
+      }
+      let data = {};
+      try { data = await response.json(); } catch {}
+      if (!response.ok || data.ok === false) throw new Error(data.error || 'OTP request failed');
+      return data;
+    }
+    async function checkSheetStatus() {
+      try {
+        const st = await otpRequest('getStatus', {});
+        if (st && st.sheetConfigured === false) {
+          showNotice('Google Sheet is not configured. Update Apps Script SHEET_ID (script properties) and redeploy.', 'error');
+        }
+      } catch (e) {
+        showNotice('Cannot reach Apps Script. Check deployment / netlify dev.', 'error');
+      }
+    }
+    function syncToSheet(action, payload) {
+      otpRequest(action, payload).catch((err) => {
+        console.warn('Sheet sync failed:', action, err && err.message ? err.message : err);
+      });
+    }
+    async function syncSettingsToSheet(reason) {
+      const res = await otpRequest('syncSettings', {
+        actorEmail: APP_STATE.user?.email || '',
+        settings: APP_STATE.config,
+        reason: reason || ''
+      });
+      return res;
+    }
+    function showNotice(message, type = 'info') {
+      const el = document.getElementById('appNotice');
+      if (!el) return;
+      el.className = `notice ${type}`;
+      el.textContent = message;
+      el.style.display = 'block';
+      if (el._timer) clearTimeout(el._timer);
+      el._timer = setTimeout(() => { el.style.display = 'none'; }, 2400);
+    }
+    let __autoSyncTimer = null;
+    function queueAutoSyncSettings(reason) {
+      if (!canOpenSettings()) return;
+      if (__autoSyncTimer) clearTimeout(__autoSyncTimer);
+      __autoSyncTimer = setTimeout(() => {
+        __autoSyncTimer = null;
+        autoSyncSettings(reason || 'update');
+      }, 800);
+    }
+    async function autoSyncSettings(reason) {
+      if (!canOpenSettings()) return;
+      try {
+        migrateConfigLocations(APP_STATE.config);
+        rebuildPlantsMirror(APP_STATE.config);
+        if (database) {
+          await database.ref('appConfig').set(APP_STATE.config);
+        }
+        await syncSettingsToSheet(reason || 'update');
+        showNotice('Settings synced to Sheet.', 'success');
+      } catch (e) {
+        showNotice('Auto-sync failed: ' + (e && e.message ? e.message : 'unknown'), 'error');
+      }
+    }
+    function getActionPin(actionName) {
+      const ui = (APP_STATE.config && APP_STATE.config.uiSecurity) || {};
+      if (actionName === 'Settings') return String(ui.settingsPin || '1234');
+      if (actionName === 'Excel Export') return String(ui.excelPin || '1234');
+      return '1234';
+    }
+    let __pinResolve = null;
+    function openPinModal(actionName) {
+      const key = `acLeakagePinOk:${actionName}`;
+      if (sessionStorage.getItem(key) === 'yes') return Promise.resolve(true);
+      return new Promise((resolve) => {
+        __pinResolve = resolve;
+        document.getElementById('pinTitle').textContent = `Enter password for ${actionName}`;
+        document.getElementById('pinSubtitle').textContent = 'This action is protected.';
+        const input = document.getElementById('pinInput');
+        input.value = '';
+        document.getElementById('pinModal').style.display = 'flex';
+        setTimeout(() => input.focus(), 50);
+        document.getElementById('pinModal').dataset.actionName = actionName;
+      });
+    }
+    function closePinModal(ok) {
+      const modal = document.getElementById('pinModal');
+      const actionName = modal.dataset.actionName || '';
+      const key = `acLeakagePinOk:${actionName}`;
+      if (!ok) {
+        modal.style.display = 'none';
+        if (__pinResolve) __pinResolve(false);
+        __pinResolve = null;
+        return;
+      }
+      const entered = String(document.getElementById('pinInput').value || '').trim();
+      if (entered !== getActionPin(actionName)) {
+        showNotice('Incorrect password.', 'error');
+        return;
+      }
+      sessionStorage.setItem(key, 'yes');
+      modal.style.display = 'none';
+      if (__pinResolve) __pinResolve(true);
+      __pinResolve = null;
+    }
+    function applyPinChangesInUI() {
+      APP_STATE.config = APP_STATE.config || {};
+      APP_STATE.config.uiSecurity = APP_STATE.config.uiSecurity || { settingsPin: '1234', excelPin: '1234' };
+      const s = String(document.getElementById('settingsPinInput')?.value || '').trim();
+      const e = String(document.getElementById('excelPinInput')?.value || '').trim();
+      if (s) APP_STATE.config.uiSecurity.settingsPin = s;
+      if (e) APP_STATE.config.uiSecurity.excelPin = e;
+      showNotice('Passwords updated in UI. Click Save to persist.', 'success');
+    }
+    function switchSettingsTab(tabName) {
+      document.querySelectorAll('.settings-tab-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+      });
+      document.querySelectorAll('.settings-panel').forEach((panel) => {
+        panel.classList.toggle('active', panel.dataset.panel === tabName);
+      });
+    }
+    function isItAdmin(){ return APP_STATE.profile?.role === 'it_admin'; }
+    function canOpenSettings(){ return ['it_admin', 'full_access'].includes(APP_STATE.profile?.role); }
+    function canViewLocation(location){
+      const allowedLocations = toScopeList(APP_STATE.profile?.allowedLocations);
+      if (!allowedLocations.length || allowedLocations.includes('*')) return true;
+      const loc = canonicalLocationName(location);
+      return allowedLocations.some((x) => canonicalLocationName(x) === loc);
+    }
+    function canViewPlant(plant){
+      const allowedPlants = toScopeList(APP_STATE.profile?.allowedPlants);
+      if (!allowedPlants.length || allowedPlants.includes('*')) return true;
+      return allowedPlants.some((x) => isPlantMatch(x, plant));
+    }
+    function canonicalPlantName(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      const token = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (token === 'NGM') return 'NGM';
+      if (token === 'PGTL') return 'PGTL';
+      if (token.startsWith('PLANT2') || token === 'PLANTII') return 'Plant-2';
+      return raw;
+    }
+    function plantToken(value) {
+      return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    }
+    function isPlantMatch(scopePlant, recordPlant) {
+      const a = canonicalPlantName(scopePlant);
+      const b = canonicalPlantName(recordPlant);
+      if (a && b && a === b) return true;
+      const ta = plantToken(scopePlant);
+      const tb = plantToken(recordPlant);
+      if (!ta || !tb) return false;
+      if (ta === tb) return true;
+      if (ta === 'NGM' && tb.startsWith('NGM')) return true;
+      if (tb === 'NGM' && ta.startsWith('NGM')) return true;
+      return false;
+    }
+    function inferPlantsFromUserMappings(locationNorm) {
+      const cfg = APP_STATE.config || {};
+      const buckets = [cfg.adminUsers || {}, cfg.employeeUsers || {}, cfg.users || {}];
+      const out = [];
+      buckets.forEach((bucket) => {
+        Object.keys(bucket).forEach((k) => {
+          const u = bucket[k] || {};
+          const locs = toScopeList(u.allowedLocations);
+          const plants = toScopeList(u.allowedPlants);
+          const locOk = locs.includes('*') || locs.some((l) => canonicalLocationName(l) === locationNorm);
+          if (!locOk || plants.includes('*')) return;
+          plants.forEach((p) => {
+            const plant = canonicalPlantName(p);
+            if (plant) out.push(plant);
+          });
+        });
+      });
+      return Array.from(new Set(out));
+    }
+    function canViewRecord(r) {
+      // Never allow data rendering before authenticated scoped profile is ready.
+      if (!isAuthenticated || !APP_STATE.profile) return false;
+      const plant = canonicalPlantName(r.plant || '');
+      const location = canonicalLocationName(r.location || 'Pune');
+      const role = APP_STATE.profile?.role || '';
+      const ap = toScopeList(APP_STATE.profile?.allowedPlants);
+      const al = toScopeList(APP_STATE.profile?.allowedLocations);
+      const plantOk = !ap.length || ap.includes('*') || (plant && ap.some((x) => isPlantMatch(x, plant)));
+      const locOk = !al.length || al.includes('*') || al.some((x) => canonicalLocationName(x) === location);
+      if (['it_admin', 'full_access', 'admin'].includes(role)) return plantOk && locOk;
+      if (role === 'location_admin') {
+        if (!al.length || al.includes('*')) return plantOk;
+        return al.some((x) => canonicalLocationName(x) === location) && plantOk;
+      }
+      if (role === 'plant_admin') {
+        if (!ap.length || ap.includes('*')) return locOk;
+        return plant && ap.some((x) => isPlantMatch(x, plant)) && locOk;
+      }
+      return plantOk && locOk;
+    }
+    function rebuildPlantsMirror(cfg) {
+      if (!cfg) return;
+      cfg.plants = {};
+      const locs = cfg.locations || {};
+      Object.keys(locs).forEach((loc) => {
+        const plants = (locs[loc] && locs[loc].plants) || {};
+        Object.keys(plants).forEach((plant) => {
+          cfg.plants[plant] = cfg.plants[plant] || { locations: [], lines: [] };
+          if (!cfg.plants[plant].locations.includes(loc)) cfg.plants[plant].locations.push(loc);
+          const lines = plants[plant].lines || [];
+          lines.forEach((ln) => {
+            if (!cfg.plants[plant].lines.includes(ln)) cfg.plants[plant].lines.push(ln);
+          });
+        });
+      });
+    }
+    function migrateConfigLocations(cfg) {
+      if (!cfg) return;
+      cfg.locations = cfg.locations || {};
+      cfg.defectsByLocation = cfg.defectsByLocation || {};
+      if (Object.keys(cfg.locations).length === 0 && cfg.plants && Object.keys(cfg.plants).length) {
+        Object.keys(cfg.plants).forEach((plant) => {
+          const p = cfg.plants[plant] || {};
+          const locs = p.locations || [];
+          const lines = p.lines || [];
+          locs.forEach((loc) => {
+            cfg.locations[loc] = cfg.locations[loc] || { plants: {} };
+            cfg.locations[loc].plants[plant] = cfg.locations[loc].plants[plant] || { lines: [] };
+            lines.forEach((ln) => {
+              if (cfg.locations[loc].plants[plant].lines.indexOf(ln) < 0) cfg.locations[loc].plants[plant].lines.push(ln);
+            });
+          });
+        });
+      }
+      rebuildPlantsMirror(cfg);
+    }
+    function ensurePuneDefaultPlants(cfg) {
+      if (!cfg) return;
+      cfg.locations = cfg.locations || {};
+      cfg.locations.Pune = cfg.locations.Pune || { plants: {} };
+      const punePlants = ['Plant-2', 'PGTL', 'NGM'];
+      punePlants.forEach((p) => {
+        cfg.locations.Pune.plants[p] = cfg.locations.Pune.plants[p] || { lines: [] };
+      });
+      rebuildPlantsMirror(cfg);
+    }
+    function destroyAllCharts() {
+      Object.keys(dashboardCharts).forEach((k) => {
+        try {
+          if (dashboardCharts[k] && typeof dashboardCharts[k].destroy === 'function') dashboardCharts[k].destroy();
+        } catch (e) {}
+      });
+      dashboardCharts = {};
+    }
+    function getLocationNames(cfg) {
+      return Object.keys((cfg && cfg.locations) || {}).sort();
+    }
+    function fillSelect(sel, values, placeholder) {
+      if (!sel) return;
+      const cur = sel.value;
+      sel.innerHTML = '';
+      const ph = document.createElement('option');
+      ph.value = '';
+      ph.textContent = placeholder || 'Select';
+      sel.appendChild(ph);
+      values.forEach((v) => {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = v;
+        sel.appendChild(o);
+      });
+      if (values.includes(cur)) sel.value = cur;
+    }
+    function populateSettingsHierarchyDropdowns() {
+      const cfg = APP_STATE.config || {};
+      const locs = getLocationNames(cfg);
+      ['hierPickLocation', 'hierLineLocation', 'defectPickLocation', 'empPickLocation', 'adminScopeLocation', 'productCfgLocation'].forEach((id) => {
+        fillSelect(document.getElementById(id), locs, 'Select location');
+      });
+      syncLinePlantDropdowns();
+      syncEmpPlantDropdown();
+      renderCurrentStructure();
+    }
+    function renderCurrentStructure() {
+      const el = document.getElementById('currentStructureBox');
+      if (!el) return;
+      const cfg = APP_STATE.config || {};
+      const locs = Object.keys(cfg.locations || {}).sort();
+      if (!locs.length) {
+        el.textContent = 'No locations configured.';
+        return;
+      }
+      const rows = [];
+      locs.forEach((loc) => {
+        rows.push(`<div><b>${loc}</b></div>`);
+        const plants = Object.keys((cfg.locations[loc] && cfg.locations[loc].plants) || {}).sort();
+        plants.forEach((plant) => {
+          rows.push(`<div style="padding-left:12px">- ${plant}</div>`);
+          const lines = ((cfg.locations[loc] && cfg.locations[loc].plants && cfg.locations[loc].plants[plant] && cfg.locations[loc].plants[plant].lines) || []).slice().sort();
+          lines.forEach((line) => rows.push(`<div style="padding-left:24px">- ${line}</div>`));
+        });
+      });
+      el.innerHTML = rows.join('');
+    }
+    function syncLinePlantDropdowns() {
+      const cfg = APP_STATE.config || {};
+      const loc = document.getElementById('hierLineLocation').value;
+      const plants = loc && cfg.locations && cfg.locations[loc] ? Object.keys(cfg.locations[loc].plants || {}).sort() : [];
+      fillSelect(document.getElementById('hierLinePlant'), plants, 'Select plant');
+    }
+    function syncEmpPlantDropdown() {
+      const cfg = APP_STATE.config || {};
+      const loc = document.getElementById('empPickLocation').value;
+      const plants = loc && cfg.locations && cfg.locations[loc] ? Object.keys(cfg.locations[loc].plants || {}).sort() : [];
+      fillSelect(document.getElementById('empPickPlant'), plants, 'Select plant');
+    }
+    function refreshSettingsPreview() {}
+    function addNewLocation() {
+      const name = String(document.getElementById('newLocationName').value || '').trim();
+      if (!name) return;
+      APP_STATE.config = APP_STATE.config || {};
+      APP_STATE.config.locations = APP_STATE.config.locations || {};
+      if (!APP_STATE.config.locations[name]) APP_STATE.config.locations[name] = { plants: {} };
+      rebuildPlantsMirror(APP_STATE.config);
+      document.getElementById('newLocationName').value = '';
+      populateSettingsHierarchyDropdowns();
+      refreshSettingsPreview();
+      queueAutoSyncSettings('add_location');
+    }
+    function addPlantUnderLocation() {
+      const loc = document.getElementById('hierPickLocation').value;
+      const plant = String(document.getElementById('newPlantUnderLoc').value || '').trim();
+      if (!loc || !plant) return;
+      APP_STATE.config.locations = APP_STATE.config.locations || {};
+      APP_STATE.config.locations[loc] = APP_STATE.config.locations[loc] || { plants: {} };
+      APP_STATE.config.locations[loc].plants[plant] = APP_STATE.config.locations[loc].plants[plant] || { lines: [] };
+      rebuildPlantsMirror(APP_STATE.config);
+      document.getElementById('newPlantUnderLoc').value = '';
+      populateSettingsHierarchyDropdowns();
+      refreshSettingsPreview();
+      queueAutoSyncSettings('add_plant');
+    }
+    function addLineUnderPlant() {
+      const loc = document.getElementById('hierLineLocation').value;
+      const plant = document.getElementById('hierLinePlant').value;
+      const line = String(document.getElementById('newLineName').value || '').trim();
+      if (!loc || !plant || !line) return;
+      APP_STATE.config.locations = APP_STATE.config.locations || {};
+      APP_STATE.config.locations[loc] = APP_STATE.config.locations[loc] || { plants: {} };
+      APP_STATE.config.locations[loc].plants[plant] = APP_STATE.config.locations[loc].plants[plant] || { lines: [] };
+      const arr = APP_STATE.config.locations[loc].plants[plant].lines;
+      if (arr.indexOf(line) < 0) arr.push(line);
+      rebuildPlantsMirror(APP_STATE.config);
+      document.getElementById('newLineName').value = '';
+      refreshSettingsPreview();
+      renderCurrentStructure();
+      queueAutoSyncSettings('add_line');
+    }
+    function addLocationDefects() {
+      const loc = document.getElementById('defectPickLocation').value;
+      const raw = String(document.getElementById('defectListCsv').value || '').trim();
+      if (!loc) return;
+      const list = raw ? raw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      APP_STATE.config.defectsByLocation = APP_STATE.config.defectsByLocation || {};
+      APP_STATE.config.defectsByLocation[loc] = list.length ? list : ['Assembly Line Defect', 'Headershop Defect', 'HE Shop Defect'];
+      refreshSettingsPreview();
+      queueAutoSyncSettings('set_defects');
+    }
+    function addOrUpdateProductConfig() {
+      const loc = String(document.getElementById('productCfgLocation').value || '').trim();
+      const product = String(document.getElementById('productCfgName').value || '').trim();
+      const linesCsv = String(document.getElementById('productCfgLines').value || '').trim();
+      const defectsCsv = String(document.getElementById('productCfgDefects').value || '').trim();
+      const stagesCsv = String(document.getElementById('productCfgStages').value || '').trim();
+      const jointsCsv = String(document.getElementById('productCfgJoints').value || '').trim();
+      const image1 = String(document.getElementById('productCfgImg1').value || '').trim();
+      const image2 = String(document.getElementById('productCfgImg2').value || '').trim();
+      if (!product) return;
+      APP_STATE.config = APP_STATE.config || {};
+      APP_STATE.config.productCatalog = APP_STATE.config.productCatalog || {};
+      APP_STATE.config.productCatalogByLocation = APP_STATE.config.productCatalogByLocation || {};
+      const parseCsv = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+      const parseJoints = (v) => parseCsv(v).map((item, idx) => {
+        const parts = item.split(':');
+        const id = (parts.shift() || `Joint-${idx + 1}`).trim();
+        const description = (parts.join(':') || id).trim();
+        return { id, description };
+      });
+      const payload = {
+        lines: parseCsv(linesCsv),
+        defects: parseCsv(defectsCsv),
+        detectionStages: parseCsv(stagesCsv),
+        joints: parseJoints(jointsCsv),
+        images: { image1, image2 }
+      };
+      if (loc) {
+        APP_STATE.config.productCatalogByLocation[loc] = APP_STATE.config.productCatalogByLocation[loc] || {};
+        APP_STATE.config.productCatalogByLocation[loc][product] = payload;
+      } else {
+        APP_STATE.config.productCatalog[product] = payload;
+      }
+      refreshSettingsPreview();
+      showNotice(`Product configuration saved for ${loc || 'global'} scope.`, 'success');
+      queueAutoSyncSettings('product_config');
+    }
+    function checkAuthStatus() {
+      const raw = localStorage.getItem('acLeakageSession');
+      if (!raw) return false;
+      try {
+        const session = JSON.parse(raw);
+        if (!session.expiresAt || Date.now() > session.expiresAt) {
+          localStorage.removeItem('acLeakageSession');
+          return false;
+        }
+        isAuthenticated = true;
+        APP_STATE.user = session.user || null;
+        APP_STATE.profile = session.profile || null;
+        if (APP_STATE.profile) {
+          APP_STATE.profile.allowedLocations = toScopeList(APP_STATE.profile.allowedLocations);
+          APP_STATE.profile.allowedPlants = toScopeList(APP_STATE.profile.allowedPlants);
+        }
+        applyRoleUI();
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('mainDashboard').style.display = 'block';
+        return true;
+      } catch {
+        localStorage.removeItem('acLeakageSession');
+        return false;
+      }
+    }
+
+    function handleLoginKeydown(event) {
+      if (event.key !== 'Enter') return;
+      const otpRow = document.getElementById('otpRow');
+      if (otpRow && otpRow.style.display !== 'none') verifyOtpLogin();
+      else sendOtp();
+    }
+
+    async function sendOtp() {
+      const email = normalizeEmail(document.getElementById('loginEmail').value);
+      const errorEl = document.getElementById('loginError');
+      if (!email) {
+        errorEl.style.display = 'block';
+        errorEl.textContent = 'Enter valid email.';
+        return;
+      }
+      try {
+        await otpRequest('sendOtp', { email, source: 'dashboard' });
+        window.localStorage.setItem('emailForSignIn', email);
+        document.getElementById('otpRow').style.display = 'flex';
+        errorEl.style.display = 'block';
+        errorEl.style.background = '#e8f5e9';
+        errorEl.style.color = '#2e7d32';
+        errorEl.textContent = 'OTP sent to your mail.';
+      } catch (e) {
+        errorEl.style.display = 'block';
+        errorEl.style.background = '#ffebee';
+        errorEl.style.color = '#c62828';
+        errorEl.textContent = 'Email send failed: ' + (e.message || 'unknown');
+      }
+    }
+
+    async function verifyOtpLogin() {
+      const errorEl = document.getElementById('loginError');
+      let email = window.localStorage.getItem('emailForSignIn') || normalizeEmail(document.getElementById('loginEmail').value);
+      const otp = String(document.getElementById('loginOtp').value || '').trim();
+      if (!email) email = prompt('Confirm your email');
+      email = normalizeEmail(email);
+      if (!otp) {
+        errorEl.style.display = 'block';
+        errorEl.textContent = 'OTP required.';
+        return;
+      }
+      try {
+        const result = await otpRequest('verifyOtp', { email, otp, source: 'dashboard' });
+        window.localStorage.removeItem('emailForSignIn');
+        await finishUserLogin(result.user || { email }, result.profile || null, result.token || null, result.tokenExpiresAt || null);
+        errorEl.style.display = 'none';
+      } catch (e) {
+        errorEl.style.display = 'block';
+        errorEl.textContent = 'Login failed: ' + (e.message || 'unknown');
+      }
+    }
+
+    async function finishUserLogin(user, profileFromOtp, sessionToken, tokenExpiresAt) {
+      if (!APP_STATE.config) await loadAppConfig();
+      let profile = profileFromOtp || await loadUserProfile(user.email);
+      if (!profile && APP_STATE.config && (!APP_STATE.config.users || Object.keys(APP_STATE.config.users).length === 0)) {
+        profile = { email: normalizeEmail(user.email), role: 'it_admin', allowedPlants: ['*'], allowedLocations: ['*'], canSubmitDefects: true, canManageScanner: true };
+        APP_STATE.config.users = APP_STATE.config.users || {};
+        APP_STATE.config.users[emailKey(user.email)] = profile;
+        await database.ref('appConfig/users/' + emailKey(user.email)).set(profile);
+      }
+      if (!profile) {
+        throw new Error('Email not authorized by IT admin');
+      }
+      profile.allowedLocations = toScopeList(profile.allowedLocations);
+      profile.allowedPlants = toScopeList(profile.allowedPlants);
+      APP_STATE.user = { uid:user.uid || user.email, email:user.email };
+      APP_STATE.profile = profile;
+      // Reset stale dashboard data so previous broad scope never flashes.
+      currentData = [];
+      lastDataSignature = '';
+      await reloadConfigFromSheet('post_login_refresh');
+      isAuthenticated = true;
+      localStorage.setItem('acLeakageSession', JSON.stringify({
+        user: { ...APP_STATE.user, otpSessionToken: sessionToken || null },
+        profile: APP_STATE.profile,
+        expiresAt: tokenExpiresAt || (Date.now() + SESSION_MS)
+      }));
+      syncToSheet('logActivity', {
+        email: APP_STATE.user.email,
+        role: APP_STATE.profile?.role || '',
+        activity: 'dashboard_login_success',
+        source: 'index'
+      });
+      applyRoleUI();
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('mainDashboard').style.display = 'block';
+      try {
+        initCharts();
+      } catch (chartErr) {
+        console.error(chartErr);
+      }
+      if (database) loadFirebaseData();
+      else updateConnectionStatus(false);
+    }
+
+    async function loadUserProfile(email) {
+      if (APP_STATE.config && APP_STATE.config.users && APP_STATE.config.users[emailKey(email)]) {
+        return APP_STATE.config.users[emailKey(email)];
+      }
+      if (!database) return null;
+      const key = emailKey(email);
+      const snap = await database.ref('appConfig/users/' + key).once('value');
+      return snap.exists() ? snap.val() : null;
+    }
+
+    function applyRoleUI() {
+      document.getElementById('settingsBtn').style.display = canOpenSettings() ? 'inline-block' : 'none';
+      document.getElementById('accountEmail').textContent = APP_STATE.user?.email || '-';
+      const b = document.getElementById('accessIndicatorBtn');
+      if (!b) return;
+      const locs = toScopeList(APP_STATE.profile?.allowedLocations);
+      const label = locs.includes('*') ? 'All Locations' : (locs.join(', ') || '-');
+      b.textContent = `Location: ${label}`;
+      b.title = b.textContent;
+    }
+
+    function logoutUser() {
+      syncToSheet('logActivity', {
+        email: APP_STATE.user?.email || '',
+        role: APP_STATE.profile?.role || '',
+        activity: 'dashboard_logout',
+        source: 'index'
+      });
+      isAuthenticated = false;
+      APP_STATE.user = null;
+      APP_STATE.profile = null;
+      currentData = [];
+      lastDataSignature = '';
+      sheetReportsCache = [];
+      lastSheetFetchAt = 0;
+      sheetFetchInFlight = null;
+      if (database) {
+        database.ref('/').off('value');
+      }
+      firebaseListenerBound = false;
+      localStorage.removeItem('acLeakageSession');
+      document.getElementById('loginScreen').style.display = 'flex';
+      document.getElementById('mainDashboard').style.display = 'none';
+      document.getElementById('loginEmail').focus();
+    }
+    function toggleAccountMenu() {
+      document.getElementById('accountMenu').classList.toggle('open');
+    }
+
+async function protectedExportToExcel(type) {
+      if (isAuthenticated) {
+        const ok = await openPinModal('Excel Export');
+        if (!ok) return;
+        if (type === 'lastmonth') exportLastMonthToExcel();
+        else exportToExcel();
+      } else {
+        showNotice('Please login first.', 'error');
+      }
+    }
+
+    async function reloadConfigFromSheet(reason) {
+      try {
+        const fromSheet = await otpRequest('getConfig', { reason: reason || '' });
+        const cfg = fromSheet && fromSheet.config ? fromSheet.config : null;
+        if (!cfg) return false;
+        APP_STATE.config = cfg;
+        migrateConfigLocations(APP_STATE.config);
+        ensurePuneDefaultPlants(APP_STATE.config);
+        APP_STATE.config.uiSecurity = APP_STATE.config.uiSecurity || { settingsPin: '1234', excelPin: '1234' };
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function loadAppConfig() {
+      if (!database) return;
+      let cfg = null;
+      try {
+        await checkSheetStatus();
+        const fromSheet = await otpRequest('getConfig', {});
+        cfg = fromSheet.config || null;
+      } catch (_) {
+        showNotice('Sheet config fetch failed. Using Firebase backup config.', 'error');
+      }
+      if (!cfg) {
+        const snap = await database.ref('appConfig').once('value');
+        cfg = snap.val() || {};
+      }
+      APP_STATE.config = cfg;
+      migrateConfigLocations(APP_STATE.config);
+      ensurePuneDefaultPlants(APP_STATE.config);
+      if (!APP_STATE.config.users) {
+        const bootstrap = {
+          users: {},
+          locations: {
+            Pune: { plants: { 'Plant-2': { lines: [] }, PGTL: { lines: [] }, NGM: { lines: [] } } },
+            Supa: { plants: { NGM: { lines: [] } } }
+          },
+          defectsByLocation: {
+            Pune: ['Assembly Line Defect', 'Headershop Defect', 'HE Shop Defect'],
+            Supa: ['Assembly Line Defect', 'Headershop Defect', 'HE Shop Defect']
+          },
+          uiSecurity: {
+            settingsPin: '1234',
+            excelPin: '1234'
+          },
+          scannerCards: [],
+          defectMaster: {}
+        };
+        rebuildPlantsMirror(bootstrap);
+        await database.ref('appConfig').set(bootstrap);
+        APP_STATE.config = bootstrap;
+      }
+      APP_STATE.config.uiSecurity = APP_STATE.config.uiSecurity || { settingsPin: '1234', excelPin: '1234' };
+    }
+
+    async function openSettings() {
+      if (!canOpenSettings()) return;
+      const ok = await openPinModal('Settings');
+      if (!ok) return;
+      migrateConfigLocations(APP_STATE.config);
+      populateSettingsHierarchyDropdowns();
+      const plants = Object.keys((APP_STATE.config && APP_STATE.config.plants) || {}).sort();
+      fillSelect(document.getElementById('adminScopePlant'), plants, 'Select plant');
+      refreshSettingsPreview();
+      const ui = APP_STATE.config?.uiSecurity || {};
+      const sp = document.getElementById('settingsPinInput');
+      const ep = document.getElementById('excelPinInput');
+      if (sp) sp.value = String(ui.settingsPin || '1234');
+      if (ep) ep.value = String(ui.excelPin || '1234');
+      document.getElementById('settingsModal').style.display = 'flex';
+      switchSettingsTab('employees');
+      renderAccessSummary();
+      loadAuditLogs();
+    }
+    function closeSettings() {
+      document.getElementById('settingsModal').style.display = 'none';
+    }
+    async function saveSettings() {
+      if (!canOpenSettings()) return;
+      try {
+        applyPinChangesInUI();
+        migrateConfigLocations(APP_STATE.config);
+        rebuildPlantsMirror(APP_STATE.config);
+        await database.ref('appConfig').set(APP_STATE.config);
+        await syncSettingsToSheet('manual_save');
+        showNotice('Settings saved.', 'success');
+      } catch (e) {
+        showNotice('Settings save failed: ' + e.message, 'error');
+      }
+    }
+    function addEmployeeAccess() {
+      const email = normalizeEmail(document.getElementById('empEmail').value);
+      const loc = document.getElementById('empPickLocation').value;
+      const plant = document.getElementById('empPickPlant').value;
+      if (!email || !loc || !plant) return;
+      APP_STATE.config = APP_STATE.config || {};
+      APP_STATE.config.users = APP_STATE.config.users || {};
+      APP_STATE.config.employeeUsers = APP_STATE.config.employeeUsers || {};
+      APP_STATE.config.adminUsers = APP_STATE.config.adminUsers || {};
+      APP_STATE.config.employeeUsers[emailKey(email)] = {
+        email,
+        role: 'employee',
+        allowedPlants: [plant],
+        allowedLocations: [loc],
+        canSubmitDefects: true
+      };
+      APP_STATE.config.users[emailKey(email)] = {
+        email,
+        role: 'employee',
+        allowedPlants: [plant],
+        allowedLocations: [loc],
+        canSubmitDefects: true
+      };
+      refreshSettingsPreview();
+      renderAccessSummary();
+      queueAutoSyncSettings('employee_access');
+    }
+    function addAdminAccess() {
+      const email = normalizeEmail(document.getElementById('adminEmail').value);
+      const role = document.getElementById('adminRoleSelect').value;
+      if (!email) return;
+      let allowedPlants = ['*'];
+      let allowedLocations = ['*'];
+      if (role === 'location_admin') {
+        const loc = document.getElementById('adminScopeLocation').value;
+        if (!loc) return;
+        allowedPlants = ['*'];
+        allowedLocations = [loc];
+      } else if (role === 'plant_admin') {
+        const p = document.getElementById('adminScopePlant').value;
+        if (!p) return;
+        allowedPlants = [p];
+        allowedLocations = ['*'];
+      }
+      APP_STATE.config = APP_STATE.config || {};
+      APP_STATE.config.users = APP_STATE.config.users || {};
+      APP_STATE.config.employeeUsers = APP_STATE.config.employeeUsers || {};
+      APP_STATE.config.adminUsers = APP_STATE.config.adminUsers || {};
+      APP_STATE.config.adminUsers[emailKey(email)] = {
+        email,
+        role,
+        allowedPlants,
+        allowedLocations,
+        canSubmitDefects: true,
+        canManageScanner: ['it_admin', 'full_access'].includes(role)
+      };
+      APP_STATE.config.users[emailKey(email)] = {
+        email,
+        role,
+        allowedPlants,
+        allowedLocations,
+        canSubmitDefects: true,
+        canManageScanner: ['it_admin', 'full_access'].includes(role)
+      };
+      refreshSettingsPreview();
+      renderAccessSummary();
+      queueAutoSyncSettings('admin_access');
+    }
+    async function loadAuditLogs() {
+      const tbody = document.getElementById('auditLogsBody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
+      try {
+        const result = await otpRequest('getActivityLogs', { limit: 100 });
+        const rows = Array.isArray(result.logs) ? result.logs : [];
+        if (!rows.length) {
+          tbody.innerHTML = '<tr><td colspan="5">No logs found.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+        rows.forEach((item) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${item.timestamp ? new Date(item.timestamp).toLocaleString() : ''}</td>
+            <td>${item.email || ''}</td>
+            <td>${item.role || ''}</td>
+            <td>${item.activity || ''}</td>
+            <td>${item.source || ''}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="5">Failed to load logs.</td></tr>';
+      }
+    }
+    function renderAccessSummary() {
+      const adminUsers = ((APP_STATE.config && APP_STATE.config.adminUsers) || {});
+      const employeeUsers = ((APP_STATE.config && APP_STATE.config.employeeUsers) || {});
+      const fallbackUsers = ((APP_STATE.config && APP_STATE.config.users) || {});
+      const adminRows = Object.keys(adminUsers).map((k) => ({ ...(adminUsers[k] || {}), __type: 'admin' })).filter(Boolean);
+      const employeeRows = Object.keys(employeeUsers).map((k) => ({ ...(employeeUsers[k] || {}), __type: 'employee' })).filter(Boolean);
+      const rows = (adminRows.length || employeeRows.length)
+        ? adminRows.concat(employeeRows)
+        : Object.keys(fallbackUsers).map((k) => fallbackUsers[k]).filter(Boolean);
+      const empCount = employeeRows.length || rows.filter((u) => (u.role || 'employee') === 'employee').length;
+      const adminCount = adminRows.length || (rows.length - empCount);
+      const empEl = document.getElementById('employeeAccessCount');
+      const adminEl = document.getElementById('adminAccessCount');
+      if (empEl) empEl.textContent = `Employees: ${empCount}`;
+      if (adminEl) adminEl.textContent = `Admins: ${adminCount}`;
+      const tbody = document.getElementById('accessSummaryBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      rows
+        .sort((a, b) => String(a.email || '').localeCompare(String(b.email || '')))
+        .forEach((u) => {
+          const tr = document.createElement('tr');
+          const role = u.__type === 'employee' ? 'employee' : (u.role || 'employee');
+          tr.innerHTML = `
+            <td>${u.email || ''}</td>
+            <td>${role}</td>
+            <td>${(u.allowedLocations || ['*']).join(', ')}</td>
+            <td>${(u.allowedPlants || ['*']).join(', ')}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      if (!rows.length) tbody.innerHTML = '<tr><td colspan="4">No access records yet.</td></tr>';
+    }
+
+    function updateConnectionStatus(connected) {
+      const statusEl = document.getElementById('connectionStatus');
+      if (connected) {
+        statusEl.className = 'connection-status status-connected';
+        statusEl.title = 'Connected to Firebase';
+      } else {
+        statusEl.className = 'connection-status status-disconnected';
+        statusEl.title = 'Disconnected from Firebase';
+      }
+    }
+
+    async function refreshDashboard() {
+      if (database) {
+        await reloadConfigFromSheet('manual_refresh');
+        fetchFirebaseSnapshotOnce();
+        showNotice('Refreshing dashboard...', 'info');
+      } else {
+        showNotice('Firebase not connected', 'error');
+      }
+    }
+    function scheduleRefreshUI() {
+      if (refreshRafId) cancelAnimationFrame(refreshRafId);
+      refreshRafId = requestAnimationFrame(() => {
+        refreshRafId = null;
+        refreshUI();
+      });
+    }
+
+    function pieTotal_(ctx) {
+      const data = (((ctx || {}).chart || {}).data || {}).datasets || [];
+      const values = (data[0] && data[0].data) || [];
+      return values.reduce((a, b) => a + (Number(b) || 0), 0);
+    }
+
+    function pieLabelFormatter_(value, ctx) {
+      const total = pieTotal_(ctx);
+      if (!total) return '';
+      const pct = ((Number(value || 0) / total) * 100);
+      // Keep tiny slices compact so they don't collide.
+      if (pct < 3) return `${value}`;
+      return `${value}\n${pct.toFixed(1)}%`;
+    }
+
+    function tinySliceRank_(ctx, thresholdPct) {
+      const chart = (ctx && ctx.chart) || null;
+      const ds = (chart && chart.data && chart.data.datasets && chart.data.datasets[0]) || null;
+      const data = (ds && ds.data) || [];
+      const total = data.reduce((a, b) => a + (Number(b) || 0), 0);
+      if (!total) return 0;
+      const tinyIndexes = data
+        .map((v, i) => ({ i, pct: ((Number(v) || 0) / total) * 100 }))
+        .filter((x) => x.pct > 0 && x.pct < thresholdPct)
+        .map((x) => x.i);
+      return Math.max(0, tinyIndexes.indexOf(ctx.dataIndex));
+    }
+
+    function shortTickLabel_(label, maxLen) {
+      const txt = String(label || '').replace(/\s+/g, ' ').trim();
+      if (txt.length <= maxLen) return txt;
+      return `${txt.slice(0, Math.max(1, maxLen - 1))}\u2026`;
+    }
+
+
+    function initCharts() {
+      destroyAllCharts();
+      if (window.ChartDataLabels && !window.__acLeakageChartDlReg) {
+        Chart.register(ChartDataLabels);
+        window.__acLeakageChartDlReg = true;
+      }
+
+      // Plant Distribution
+      const plantCtx = document.getElementById('plantChart').getContext('2d');
+      dashboardCharts.plant = new Chart(plantCtx, {
+        type: 'doughnut',
+        data: { 
+          labels: [], 
+          datasets:[{ 
+            data: [], 
+            backgroundColor: ['#B3B7F5','#BBA5D1','#F8C9FD','#A1D2FA','#F7B680'] 
+          }] 
+        },
+        options: {
+          responsive:true, 
+          maintainAspectRatio:false,
+          plugins: {
+            legend: { position:'bottom', labels: { font: { size: 12 } } },
+datalabels: {
+              color: '#000',
+              formatter: (value, ctx) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+                const percentage = sum ? ((value/sum*100).toFixed(1) + '%') : '';
+                const pct = sum ? ((value / sum) * 100) : 0;
+                // Very tiny slices: keep compact text in donut center area.
+                if (pct < 2) return `${value}`;
+                return value + '\n' + percentage;
+              },
+              font: { weight: '700', size: 14 },
+              textAlign: 'center',
+              anchor: (ctx) => {
+                const total = pieTotal_(ctx);
+                const value = Number((((ctx || {}).dataset || {}).data || [])[ctx.dataIndex] || 0);
+                if (!total) return 'center';
+                const pct = ((value / total) * 100);
+                // Keep tiny labels attached to inner edge of colored ring.
+                return pct < 2 ? 'center' : 'center';
+              },
+              align: (ctx) => {
+                const total = pieTotal_(ctx);
+                const value = Number((((ctx || {}).dataset || {}).data || [])[ctx.dataIndex] || 0);
+                if (!total) return 'center';
+                const pct = ((value / total) * 100);
+                if (pct < 2) return 'start'; // move inward to white donut area
+                return 'center';
+              },
+              offset: (ctx) => {
+                const total = pieTotal_(ctx);
+                const value = Number((((ctx || {}).dataset || {}).data || [])[ctx.dataIndex] || 0);
+                if (!total) return 0;
+                const pct = ((value / total) * 100);
+                if (pct < 2) return 18;
+                return 0;
+              },
+              display: true,
+              clamp: true,
+              clip: false
+            }
+          }
+        }
+      });
+
+      // Defect Type
+      const defectCtx = document.getElementById('defectChart').getContext('2d');
+      dashboardCharts.defect = new Chart(defectCtx, {
+        type: 'pie',
+        data: { 
+          labels: [], 
+datasets:[{ 
+            data: [], 
+            backgroundColor: ['#FFB5B5','#A7E6E2','#D4A5F5','#FFD0BD','#CCECE4','#FBEEB7'] 
+          }] 
+        },
+        options: {
+          responsive:true, 
+          maintainAspectRatio:false,
+          plugins: {
+            legend: { position:'bottom', labels: { font: { size: 12 } } },
+datalabels: {
+              color: '#000',
+              formatter: (value, ctx) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+                const percentage = sum ? ((value/sum*100).toFixed(1) + '%') : '';
+                return value + '\n' + percentage; // Show count + percentage
+              },
+              font: { weight: '700', size: 14 },
+              textAlign: 'center',
+              clamp: true
+            }
+          }
+        }
+      });
+
+      // Shift-wise
+      const severityCtx = document.getElementById('severityChart').getContext('2d');
+      dashboardCharts.severity = new Chart(severityCtx, {
+        type: 'doughnut',
+        data: { 
+          labels: [], 
+          datasets:[{ 
+            data: [], 
+            backgroundColor: ['#FFB59A','#80A7C4','#8DB2CF'] 
+          }] 
+        },
+        options: {
+          responsive:true, 
+          maintainAspectRatio:false,
+          plugins: {
+            legend: { position:'bottom', labels: { font: { size: 12 } } },
+datalabels: {
+              color: '#000',
+              formatter: (value, ctx) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+                return sum ? ((value/sum*100).toFixed(1) + '%') : '';
+              },
+              font: { weight: '700', size: 14 }
+            }
+          }
+        }
+      });
+
+      // Action
+      const actionCtx = document.getElementById('actionChart').getContext('2d');
+      dashboardCharts.action = new Chart(actionCtx, {
+        type: 'pie',
+        data: { 
+          labels: [], 
+          datasets:[{ 
+            data: [], 
+            backgroundColor: ['#A6D7A8','#FFCC80','#FAA1A0','#90CAF9','#CE93D8'] 
+          }] 
+        },
+        options: {
+          responsive:true, 
+          maintainAspectRatio:false,
+          plugins: {
+            legend: { position:'bottom', labels: { font: { size: 12 } } },
+datalabels: {
+              color: '#000',
+              formatter: (value, ctx) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+                return sum ? ((value/sum*100).toFixed(1) + '%') : '';
+              },
+              font: { weight: '700', size: 14 }
+            }
+          }
+        }
+      });
+
+      // IDU Joint Pareto
+      const iduCtx = document.getElementById('iduJointChart').getContext('2d');
+      dashboardCharts.idu = new Chart(iduCtx, {
+        type: 'bar',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Frequency',
+              data: [],
+    backgroundColor: '#A1D2FA',
+          borderColor: '#90CAF9',
+              borderWidth: 1,
+              yAxisID: 'y',
+              order: 2
+            },
+            {
+              label: 'Cumulative %',
+              data: [],
+              type: 'line',
+              borderColor: '#FF6B35',
+              borderWidth: 3,
+              pointBackgroundColor: '#FF6B35',
+              pointBorderColor: '#fff',
+              pointBorderWidth: 2,
+              pointRadius: 4,
+              yAxisID: 'y1',
+              tension: 0.1,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, position: 'top', labels: { font: { size: 11 } } },
+            datalabels: {
+              display: true,
+              color: (ctx) => ctx.dataset.type === 'line' ? '#FF6B35' : '#2E6FB3',
+              anchor: (ctx) => ctx.dataset.type === 'line' ? 'end' : 'end',
+              align: (ctx) => ctx.dataset.type === 'line' ? 'bottom' : 'top',
+              offset: (ctx) => ctx.dataset.type === 'line' ? 6 : 0,
+              font: { size: 10, weight: '700' },
+              display: (ctx) => ctx.dataset.type !== 'line',
+              formatter: (value) => value,
+              clamp: true,
+              clip: false
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                font: { size: 10 },
+                autoSkip: true,
+                maxTicksLimit: 5,
+                maxRotation: 0,
+                minRotation: 0,
+                callback: function(value) {
+                  return shortTickLabel_(this.getLabelForValue(value), 16);
+                }
+              }
+            },
+            y: { beginAtZero: true, ticks: { font: { size: 11 } }, title: { display: true, text: 'Frequency', font: { size: 11 } } },
+            y1: {
+              position: 'right',
+              max: 105,
+              grid: { drawOnChartArea: false },
+              ticks: {
+                font: { size: 11 },
+                callback: function(v) { return v <= 100 ? `${v}%` : ''; }
+              },
+              title: { display: true, text: 'Cumulative %', font: { size: 11 } }
+            }
+          }
+        }
+      });
+
+      // ODU Joint Pareto
+      const oduCtx = document.getElementById('oduJointChart').getContext('2d');
+      dashboardCharts.odu = new Chart(oduCtx, {
+        type: 'bar',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Frequency',
+              data: [],
+backgroundColor: '#F7B680',
+              borderColor: '#DF9B86',
+              borderWidth: 1,
+              yAxisID: 'y',
+              order: 2
+            },
+            {
+              label: 'Cumulative %',
+              data: [],
+              type: 'line',
+              borderColor: '#A6D7A8',
+              borderWidth: 3,
+              pointBackgroundColor: '#A6D7A8',
+              pointBorderColor: '#fff',
+              pointBorderWidth: 2,
+              pointRadius: 4,
+              yAxisID: 'y1',
+              tension: 0.1,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, position: 'top', labels: { font: { size: 11 } } },
+            datalabels: {
+              display: true,
+              color: (ctx) => ctx.dataset.type === 'line' ? '#FF6B35' : '#2E6FB3',
+              anchor: (ctx) => ctx.dataset.type === 'line' ? 'end' : 'end',
+              align: (ctx) => ctx.dataset.type === 'line' ? 'bottom' : 'top',
+              offset: (ctx) => ctx.dataset.type === 'line' ? 6 : 0,
+              font: { size: 10, weight: '700' },
+              display: (ctx) => ctx.dataset.type !== 'line',
+              formatter: (value) => value,
+              clamp: true,
+              clip: false
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                font: { size: 10 },
+                autoSkip: true,
+                maxTicksLimit: 5,
+                maxRotation: 0,
+                minRotation: 0,
+                callback: function(value) {
+                  return shortTickLabel_(this.getLabelForValue(value), 16);
+                }
+              }
+            },
+            y: { beginAtZero: true, ticks: { font: { size: 11 } }, title: { display: true, text: 'Frequency', font: { size: 11 } } },
+            y1: {
+              position: 'right',
+              max: 105,
+              grid: { drawOnChartArea: false },
+              ticks: {
+                font: { size: 11 },
+                callback: function(v) { return v <= 100 ? `${v}%` : ''; }
+              },
+              title: { display: true, text: 'Cumulative %', font: { size: 11 } }
+            }
+          }
+        }
+      });
+
+      // 6-Month Trend
+      const sixMonthCtx = document.getElementById('sixMonthTrendChart').getContext('2d');
+      dashboardCharts.sixMonth = new Chart(sixMonthCtx, {
+        type: 'line',
+        data: { 
+          labels: [], 
+          datasets: [{ 
+            label: 'Leakages', 
+            data: [], 
+            borderColor:'#9C27B0', 
+            backgroundColor:'rgba(156,39,176,0.15)', 
+            tension:0.35,
+            borderWidth: 3,
+            pointBackgroundColor: '#9C27B0',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            pointRadius: 5,
+            fill: true
+          }] 
+        },
+        options: { 
+          responsive:true, 
+          maintainAspectRatio:false, 
+          plugins:{ 
+            legend:{ display:true, position:'top', labels: { font: { size: 12 } } },
+            datalabels: {
+              display: true,
+              align: 'top',
+              anchor: 'end',
+              color: '#9C27B0',
+              font: { weight: '700', size: 14 },
+              formatter: (value) => value
+            }
+          },
+          scales:{ 
+            x:{ ticks:{ font: { size: 12 } }, grid: { display: false } },
+            y:{ beginAtZero: true, ticks: { font: { size: 12 } }, title: { display: true, text: 'Number of Leakages', font: { size: 12 } } }
+          } 
+        }
+      });
+
+// Top Contributors
+const topContribCtx = document.getElementById('topContributorsChart').getContext('2d');
+dashboardCharts.topContrib = new Chart(topContribCtx, {
+  type: 'bar',
+  data: { 
+    labels: [], 
+    datasets: [{ 
+      label: 'Count', 
+      data: [], 
+      backgroundColor: [
+        '#9EE7F0',
+        '#FFD6B0',
+        '#E6D9FF'
+      ],
+      borderColor: [
+        '#6FD0DD',
+        '#FFB673',
+        '#C6B6F2'
+      ],
+      borderWidth: 1
+    }] 
+  },
+  options: { 
+    responsive: true, 
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: { 
+      legend: { display: false },
+      datalabels: { 
+        display: true,
+        anchor: 'end',
+        align: 'end',
+        color: '#444',
+        font: { 
+          family: 'Segoe UI, Roboto, Arial',
+          weight: '600',
+          size: 13 
+        },
+        formatter: (value) => value
+      }
+    },
+    scales: { 
+      x: { 
+        beginAtZero: true, 
+        ticks: { 
+          color: '#555',
+          font: { 
+            family: 'Segoe UI, Roboto, Arial',
+            size: 12 
+          } 
+        }
+      },
+      y: { 
+        ticks: { 
+          color: '#333',
+          font: { 
+            family: 'Segoe UI, Roboto, Arial',
+            size: 13,
+            weight: '500'
+          } 
+        } 
+      }
+    } 
+  }
+});
+
+      // Production Line Comparison
+      const lineCompCtx = document.getElementById('lineComparisonChart').getContext('2d');
+      dashboardCharts.lineComp = new Chart(lineCompCtx, {
+        type: 'bar',
+        data: { 
+          labels: [], 
+          datasets: [{ 
+            label: 'Leakages', 
+            data: [], 
+backgroundColor: '#ADB5E0',
+            borderColor: '#9CA4D5',
+            borderWidth: 1
+          }] 
+        },
+        options: { 
+          responsive:true, 
+          maintainAspectRatio:false,
+          plugins:{ 
+            legend:{ display:false },
+            datalabels: { 
+              display: true,
+              anchor: 'end',
+              align: 'top',
+              color: '#9CA4D5',
+              font: { weight: '700', size: 12 }
+            }
+          },
+          scales:{ 
+            x:{ ticks: { font: { size: 11 } } },
+            y:{ beginAtZero: true, ticks: { font: { size: 12 } }, title: { display: true, text: 'Number of Leakages', font: { size: 12 } } }
+          } 
+        }
+      });
+
+      // Plant-wise Monthly Trend
+      const plantMonthCtx = document.getElementById('plantMonthlyChart').getContext('2d');
+      dashboardCharts.plantMonth = new Chart(plantMonthCtx, {
+        type: 'line',
+        data: { labels: [], datasets: [] },
+        options: { 
+          responsive:true, 
+          maintainAspectRatio:false, 
+          plugins:{ 
+            legend:{ display:true, position:'top', labels: { font: { size: 11 } } },
+            datalabels: {
+              display: true,
+              align: 'top',
+              anchor: 'end',
+              color: function(context) {
+                // Use the line color for each data label
+                return context.dataset.borderColor;
+              },
+              font: { weight: '700', size: 11 },
+              formatter: (value) => value
+            }
+          },
+          scales:{ 
+            x:{ ticks: { font: { size: 12 } }, grid: { display: false } },
+            y:{ beginAtZero: true, ticks: { font: { size: 12 } }, title: { display: true, text: 'Number of Leakages', font: { size: 12 } } }
+          } 
+        }
+      });
+
+      // 7-Day Trend with Data Labels
+      const trendCtx = document.getElementById('trendChart').getContext('2d');
+      dashboardCharts.trend = new Chart(trendCtx, {
+        type: 'line',
+        data: { 
+          labels: [], 
+          datasets: [{ 
+            label: 'Leakages', 
+            data: [], 
+            borderColor:'#667eea', 
+            backgroundColor:'rgba(102,126,234,0.15)', 
+            tension:0.35,
+            borderWidth: 3,
+            pointBackgroundColor: '#667eea',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            pointRadius: 5,
+            fill: true
+          }] 
+        },
+        options: { 
+          responsive:true, 
+          maintainAspectRatio:false, 
+          plugins:{ 
+            legend:{ display:true, position:'top', labels: { font: { size: 12 } } },
+            datalabels: {
+              display: true,
+              align: 'top',
+              anchor: 'end',
+              color: '#667eea',
+              font: { weight: '700', size: 14 },
+              formatter: (value) => value
+            }
+          },
+          scales:{ 
+            x:{ ticks:{ font: { size: 12 } }, grid: { display: false } },
+            y:{ beginAtZero: true, ticks: { font: { size: 12 } }, title: { display: true, text: 'Number of Leakages', font: { size: 12 } } }
+          } 
+        }
+      });
+    }
+
+    function toDate(d) {
+      if (!d) return null;
+      
+      // Handle string timestamps
+      if (typeof d === 'string') {
+        const parsed = new Date(d);
+        // Check if valid date
+        if (!isNaN(parsed.getTime())) {
+          return parsed;
+        }
+        return null;
+      }
+      
+      // Handle Firebase Timestamp objects (with seconds and nanoseconds)
+      if (d.seconds !== undefined) {
+        return new Date(d.seconds * 1000);
+      }
+      
+      // Handle Firestore Timestamp objects (with _seconds)
+      if (d._seconds !== undefined) {
+        return new Date(d._seconds * 1000);
+      }
+      
+      // Handle numeric timestamps (milliseconds)
+      if (typeof d === 'number') {
+        return new Date(d);
+      }
+      
+      // Handle Date objects
+      if (d instanceof Date) {
+        return d;
+      }
+      
+      // Try to create Date from object
+      try {
+        return new Date(d);
+      } catch (e) {
+        console.error('Failed to convert timestamp:', d, e);
+        return null;
+      }
+    }
+
+    function getLastNDates(n) {
+      const arr = [];
+      for (let i = n-1; i >= 0; i--) {
+        const d = new Date();
+        d.setHours(0,0,0,0);
+        d.setDate(d.getDate() - i);
+        arr.push(d);
+      }
+      return arr;
+    }
+
+    function getLastNMonths(n) {
+      const arr = [];
+      for (let i = n-1; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(1);
+        d.setMonth(d.getMonth() - i);
+        arr.push(d);
+      }
+      return arr;
+    }
+
+    function refreshUI() {
+      updateStats();
+      updateTrendChart();
+      updatePlantChart();
+      updateDefectChart();
+      updateSeverityChart();
+      updateActionChart();
+      updateJointCharts();
+      updateSixMonthTrendChart();
+      updateTopContributorsChart();
+      updateLineComparisonChart();
+      updatePlantMonthlyChart();
+      updateOperatorLeaderboard();
+      updateReportsTable();
+    }
+
+function updateStats() {
+      // Get current and last month labels in MM:YY format
+      const now = new Date();
+      const currentMonthName = now.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      
+      const lastMonthDate = new Date(now);
+      lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+      const lastMonthName = lastMonthDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      
+// Update card labels dynamically - NO brackets
+      document.getElementById('currentMonthTotalLabel').textContent = `${currentMonthName} Total`;
+      document.getElementById('lastMonthTotalLabel').textContent = `${lastMonthName} Total`;
+      
+      // Calculate Today's
+      const todayStart = new Date(); 
+      todayStart.setHours(0,0,0,0);
+      const todayCount = currentData.filter(d => {
+        const ts = toDate(d.timestamp);
+        return ts && ts >= todayStart;
+      }).length;
+      
+// Calculate Last Working Day (yesterday) - PLANT WISE
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      const yesterdayEnd = new Date(todayStart);
+      
+      const yesterdayData = currentData.filter(d => {
+        const ts = toDate(d.timestamp);
+        return ts && ts >= yesterdayStart && ts < yesterdayEnd;
+      });
+      
+      const lastWorkingDayCount = yesterdayData.length;
+      const pairCounts = {};
+      yesterdayData.forEach((d) => {
+        const plant = canonicalPlantName(d.plant || '') || 'Unknown';
+        const location = canonicalLocationName(d.location || 'Pune') || 'pune';
+        const key = `${location}||${plant}`;
+        pairCounts[key] = (pairCounts[key] || 0) + 1;
+      });
+      const cfgLocs = (APP_STATE.config && APP_STATE.config.locations) || {};
+      const cfgPlants = (APP_STATE.config && APP_STATE.config.plants) || {};
+      const allowedLocs = toScopeList(APP_STATE.profile?.allowedLocations);
+      const allowedPlants = toScopeList(APP_STATE.profile?.allowedPlants);
+      const role = APP_STATE.profile?.role || '';
+      const isPuneScoped = role === 'location_admin'
+        && allowedLocs.length === 1
+        && canonicalLocationName(allowedLocs[0]) === 'pune';
+      const isSingleLocationScoped = role === 'location_admin'
+        && allowedLocs.length === 1
+        && !allowedLocs.includes('*');
+      const breakdownEl = document.getElementById('yesterdayBreakdown');
+      if (breakdownEl) {
+        let list = [];
+        if (isPuneScoped) {
+          list = ['Plant-2', 'PGTL', 'NGM'].map((p) => ({ location: 'pune', locationLabel: 'Pune', plant: p }));
+        } else if (isSingleLocationScoped) {
+          const scopedLocRaw = String(allowedLocs[0] || '').trim();
+          const scopedLoc = canonicalLocationName(scopedLocRaw) || 'pune';
+          const locKey = Object.keys(cfgLocs).find((k) => canonicalLocationName(k) === scopedLoc) || scopedLocRaw || scopedLoc;
+          if (!allowedPlants.includes('*')) {
+            list = allowedPlants.map((p) => ({ location: scopedLoc, locationLabel: locKey, plant: canonicalPlantName(p) })).filter((x) => x.plant);
+          } else {
+            let plantsInLoc = Object.keys((cfgLocs[locKey] && cfgLocs[locKey].plants) || {}).sort();
+            if (!plantsInLoc.length) {
+              plantsInLoc = Object.keys(cfgPlants).filter((p) => {
+                const locs = (cfgPlants[p] && cfgPlants[p].locations) || [];
+                return locs.some((l) => canonicalLocationName(l) === scopedLoc);
+              }).sort();
+            }
+            if (!plantsInLoc.length) {
+              plantsInLoc = inferPlantsFromUserMappings(scopedLoc);
+            }
+            list = plantsInLoc.map((p) => ({ location: scopedLoc, locationLabel: locKey, plant: canonicalPlantName(p) })).filter((x) => x.plant);
+          }
+        } else {
+          list = Object.keys(pairCounts).map((k) => {
+            const [location, plant] = k.split('||');
+            return { location, locationLabel: location, plant };
+          });
+        }
+        // fallback: if no yesterday data/list, build from access + config so zero-count plants still render
+        if (!list.length) {
+          const locScope = allowedLocs.includes('*')
+            ? Object.keys(cfgLocs)
+            : allowedLocs;
+          const next = [];
+          locScope.forEach((locRaw) => {
+            const locNorm = canonicalLocationName(locRaw);
+            const locKey = Object.keys(cfgLocs).find((k) => canonicalLocationName(k) === locNorm) || String(locRaw || '').trim();
+            if (!locNorm) return;
+            if (!allowedPlants.includes('*')) {
+              allowedPlants.forEach((p) => {
+                const plant = canonicalPlantName(p);
+                if (plant) next.push({ location: locNorm, locationLabel: locKey || locNorm, plant });
+              });
+            } else {
+              let plantsInLoc = Object.keys((cfgLocs[locKey] && cfgLocs[locKey].plants) || {});
+              if (!plantsInLoc.length) {
+                plantsInLoc = Object.keys(cfgPlants).filter((p) => {
+                  const locs = (cfgPlants[p] && cfgPlants[p].locations) || [];
+                  return locs.some((l) => canonicalLocationName(l) === locNorm);
+                });
+              }
+              if (!plantsInLoc.length) {
+                plantsInLoc = inferPlantsFromUserMappings(locNorm);
+              }
+              plantsInLoc.forEach((p) => {
+                const plant = canonicalPlantName(p);
+                if (plant) next.push({ location: locNorm, locationLabel: locKey || locNorm, plant });
+              });
+            }
+          });
+          list = next;
+        }
+        // final fallback for broad admins: show all visible config plants
+        if (!list.length) {
+          Object.keys(cfgLocs).forEach((locKey) => {
+            if (!canViewLocation(locKey)) return;
+            Object.keys((cfgLocs[locKey] && cfgLocs[locKey].plants) || {}).forEach((p) => {
+              if (!canViewPlant(p)) return;
+              const plant = canonicalPlantName(p);
+              if (plant) list.push({ location: canonicalLocationName(locKey), locationLabel: locKey, plant });
+            });
+          });
+        }
+        // de-dup
+        const seen = new Set();
+        list = list.filter((x) => {
+          const key = `${canonicalLocationName(x.location)}||${canonicalPlantName(x.plant)}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        const topThreePlants = list
+          .map((x) => {
+            const loc = canonicalLocationName(x.location) || 'pune';
+            const plant = canonicalPlantName(x.plant);
+            const count = pairCounts[`${loc}||${plant}`] || 0;
+            return {
+              location: loc,
+              locationLabel: x.locationLabel || x.location,
+              plant,
+              count
+            };
+          })
+          .filter((x) => x.plant)
+          .sort((a, b) => b.count - a.count || String(a.plant).localeCompare(String(b.plant)))
+          .slice(0, 3);
+        const html = topThreePlants.map((x) => {
+          const loc = canonicalLocationName(x.location) || 'pune';
+          const plant = canonicalPlantName(x.plant);
+          const count = x.count || 0;
+          const showLoc = loc !== 'pune';
+          const labelLoc = showLoc ? ` (${String(x.locationLabel || x.location)})` : '';
+          return `<div>${plant}${labelLoc}: ${count}</div>`;
+        }).join('');
+        breakdownEl.innerHTML = html || '<div>No plants mapped</div>';
+      }
+      
+      // Calculate This Month
+      const currentMonth = new Date();
+      currentMonth.setDate(1);
+      currentMonth.setHours(0,0,0,0);
+      const thisMonthCount = currentData.filter(d => {
+        const ts = toDate(d.timestamp);
+        return ts && ts >= currentMonth;
+      }).length;
+      
+      // Calculate Avg Daily
+      const dayOfMonth = now.getDate();
+      const avgDaily = dayOfMonth > 0 ? (thisMonthCount / dayOfMonth).toFixed(1) : 0;
+      
+      // Calculate Last Month Total
+      const lastMonth = new Date(currentMonth);
+      lastMonth.setMonth(lastMonth.getMonth() - 1);
+      const lastMonthEnd = new Date(currentMonth);
+      lastMonthEnd.setDate(0);
+      lastMonthEnd.setHours(23,59,59,999);
+      const lastMonthCount = currentData.filter(d => {
+        const ts = toDate(d.timestamp);
+        return ts && ts >= lastMonth && ts <= lastMonthEnd;
+      }).length;
+      
+      // Calculate M-o-M
+      let momChange = 0;
+      let momSymbol = '';
+      if (lastMonthCount > 0) {
+        momChange = (((thisMonthCount - lastMonthCount) / lastMonthCount) * 100).toFixed(1);
+        momSymbol = momChange >= 0 ? '↑' : '↓';
+      }
+      
+// Calculate Running Year (Aug'25 to Date)
+      const runningYearStart = new Date('2025-08-01T00:00:00');
+      const runningYearTotal = currentData.filter(d => {
+        const ts = toDate(d.timestamp);
+        return ts && ts >= runningYearStart;
+      }).length;
+      
+      // Update UI - ONLY elements that exist
+      document.getElementById('todayLeakages').textContent = todayCount;
+ document.getElementById('yesterdayTotal').textContent = lastWorkingDayCount;
+      document.getElementById('avgDaily').textContent = avgDaily;
+      document.getElementById('thisMonthLeakages').textContent = thisMonthCount;
+      document.getElementById('lastMonthTotal').textContent = lastMonthCount;
+      document.getElementById('runningYearTotal').textContent = runningYearTotal;
+      document.getElementById('momChange').textContent = momSymbol + ' ' + Math.abs(momChange) + '%';
+    }
+
+    function updateTrendChart() {
+      const days = getLastNDates(7);
+      const labels = days.map(d => d.toLocaleDateString(undefined, { weekday: 'short' }));
+      const counts = days.map(day => {
+        const dayStart = new Date(day);
+        const dayEnd = new Date(day);
+        dayEnd.setDate(dayEnd.getDate() + 1);
+        
+        return currentData.filter(item => {
+          const ts = toDate(item.timestamp);
+          return ts && ts >= dayStart && ts < dayEnd;
+        }).length;
+      });
+
+      // Calculate max value and set Y-axis scale with 15% margin
+      const maxValue = Math.max(...counts, 0);
+      const scaledMax = Math.ceil(maxValue * 1.15); // Add 15% margin above highest point
+
+      dashboardCharts.trend.data.labels = labels;
+      dashboardCharts.trend.data.datasets[0].data = counts;
+      dashboardCharts.trend.options.scales.y.max = scaledMax; // Set dynamic max
+      dashboardCharts.trend.update();
+    }
+
+    function updatePlantChart() {
+      const counts = {};
+      currentData.forEach(d => {
+        const p = d.plant || 'Unknown';
+        counts[p] = (counts[p] || 0) + 1;
+      });
+      
+      const labels = Object.keys(counts).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+      const values = labels.map(l => counts[l]);
+
+      dashboardCharts.plant.data.labels = labels;
+      dashboardCharts.plant.data.datasets[0].data = values;
+      dashboardCharts.plant.update();
+    }
+
+    function updateDefectChart() {
+      const counts = {};
+      currentData.forEach(d => {
+        const defect = d.defectType || 'Unknown';
+        counts[defect] = (counts[defect] || 0) + 1;
+      });
+      
+      const labels = Object.keys(counts);
+      const values = labels.map(l => counts[l]);
+
+      dashboardCharts.defect.data.labels = labels;
+      dashboardCharts.defect.data.datasets[0].data = values;
+      dashboardCharts.defect.update();
+    }
+
+    function updateSeverityChart() {
+      const counts = {};
+      currentData.forEach(d => {
+        const shift = d.shift || 'Unknown';
+        counts[shift] = (counts[shift] || 0) + 1;
+      });
+      
+      const labels = Object.keys(counts);
+      const values = labels.map(l => counts[l]);
+
+      dashboardCharts.severity.data.labels = labels;
+      dashboardCharts.severity.data.datasets[0].data = values;
+      dashboardCharts.severity.update();
+    }
+
+    function updateActionChart() {
+      const counts = {};
+      currentData.forEach(d => {
+        const action = d.action || 'Unknown';
+        counts[action] = (counts[action] || 0) + 1;
+      });
+      
+      const labels = Object.keys(counts);
+      const values = labels.map(l => counts[l]);
+
+      dashboardCharts.action.data.labels = labels;
+      dashboardCharts.action.data.datasets[0].data = values;
+      dashboardCharts.action.update();
+    }
+
+    function aggregateJointLeakages(unitType) {
+      const counts = {};
+      currentData.filter(d => d.type === unitType).forEach(d => {
+        const j = d.joint || 'Unknown';
+        counts[j] = (counts[j] || 0) + 1;
+      });
+      
+      const sorted = Object.entries(counts)
+        .sort((a,b) => b[1] - a[1])
+        .slice(0, 5);
+      
+      const total = sorted.reduce((sum, item) => sum + item[1], 0);
+      let cumulative = 0;
+      const cumulativePercentages = sorted.map(([label, value]) => {
+        cumulative += value;
+        return (cumulative / total * 100).toFixed(1);
+      });
+      
+      return { 
+        labels: sorted.map(x => x[0]), 
+        values: sorted.map(x => x[1]),
+        cumulative: cumulativePercentages.map(x => parseFloat(x))
+      };
+    }
+
+function updateJointCharts() {
+  const now = new Date();
+  const currentMonthName = now.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  document.getElementById('iduJointTitle').textContent = `🔩 Indoor Joint Pareto (${currentMonthName})`;
+  document.getElementById('oduJointTitle').textContent = `🔩 Outdoor Joint Pareto (${currentMonthName})`;
+  
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  
+  const currentMonthData = currentData.filter(d => {
+    const ts = toDate(d.timestamp);
+    if (!ts) return false;
+    return ts.getFullYear() === currentYear && ts.getMonth() === currentMonth;
+  });
+  
+  const aggregateCurrentMonth = (unitType) => {
+    const counts = {};
+    
+    // TRY MULTIPLE FIELD NAMES FOR UNIT TYPE
+    const filtered = currentMonthData.filter(d => {
+      const type = d.type || d.unit || d.unitType || d.location || '';
+      
+      if (unitType === 'IDU') {
+        return type === 'IDU' || type === 'Indoor' || type === 'indoor' || 
+               type === 'idu' || type.includes('Indoor') || type.includes('IDU');
+      } else {
+        return type === 'ODU' || type === 'Outdoor' || type === 'outdoor' || 
+               type === 'odu' || type.includes('Outdoor') || type.includes('ODU');
+      }
+    });
+    
+    // TRY MULTIPLE FIELD NAMES FOR JOINT
+    filtered.forEach(d => {
+      const joint = d.joint || d.jointNo || d.joint_no || d.jointNumber || 
+                    d.location || d.area || d.position || 'Unknown';
+      counts[joint] = (counts[joint] || 0) + 1;
+    });
+    
+    const sorted = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    
+    const labels = sorted.map(x => x[0]);
+    const values = sorted.map(x => x[1]);
+    
+    let cumulative = [];
+    const total = values.reduce((a, b) => a + b, 0);
+    let sum = 0;
+    values.forEach(v => {
+      sum += v;
+      cumulative.push(total > 0 ? (sum / total * 100) : 0);
+    });
+    
+    return { labels, values, cumulative };
+  };
+  
+  const idu = aggregateCurrentMonth('IDU');
+  const iduMaxValue = Math.max(...idu.values, 1);
+  const iduScaleMax = Math.ceil(iduMaxValue * 1.2) || 10;
+  
+  dashboardCharts.idu.data.labels = idu.labels;
+  dashboardCharts.idu.data.datasets[0].data = idu.values;
+  dashboardCharts.idu.data.datasets[1].data = idu.cumulative;
+  dashboardCharts.idu.options.scales.y.max = iduScaleMax;
+  dashboardCharts.idu.update();
+  
+  const odu = aggregateCurrentMonth('ODU');
+  const oduMaxValue = Math.max(...odu.values, 1);
+  const oduScaleMax = Math.ceil(oduMaxValue * 1.2) || 10;
+  
+  dashboardCharts.odu.data.labels = odu.labels;
+  dashboardCharts.odu.data.datasets[0].data = odu.values;
+  dashboardCharts.odu.data.datasets[1].data = odu.cumulative;
+  dashboardCharts.odu.options.scales.y.max = oduScaleMax;
+  dashboardCharts.odu.update();
+}
+
+    function updateSixMonthTrendChart() {
+      const months = getLastNMonths(6);
+      const labels = months.map(d => d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }));
+      const now = new Date();
+      
+      const counts = months.map((month, index) => {
+        const monthStart = new Date(month);
+        monthStart.setHours(0, 0, 0, 0); // Start of month
+        
+        let monthEnd;
+        const isCurrentMonth = (index === months.length - 1);
+        
+        if (isCurrentMonth) {
+          // For current month: count up to NOW (not end of month)
+          monthEnd = new Date(now);
+        } else {
+          // For past months: count full month
+          monthEnd = new Date(month);
+          monthEnd.setMonth(monthEnd.getMonth() + 1);
+          monthEnd.setHours(0, 0, 0, 0);
+        }
+        
+        const monthLabel = labels[index];
+        const count = currentData.filter(item => {
+          const ts = toDate(item.timestamp);
+          if (!ts) return false;
+          const inRange = ts >= monthStart && ts <= monthEnd;
+          return inRange;
+        }).length;
+        return count;
+      });
+
+      dashboardCharts.sixMonth.data.labels = labels;
+      dashboardCharts.sixMonth.data.datasets[0].data = counts;
+      dashboardCharts.sixMonth.update();
+    }
+
+    function updateTopContributorsChart() {
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      
+      const recentData = currentData.filter(d => {
+        const ts = toDate(d.timestamp);
+        return ts && ts >= sixMonthsAgo;
+      });
+
+      const counts = {};
+      recentData.forEach(d => {
+        const key = d.defectType || 'Unknown';
+        counts[key] = (counts[key] || 0) + 1;
+      });
+
+      const sorted = Object.entries(counts)
+        .sort((a,b) => b[1] - a[1])
+        .slice(0, 5);
+
+      const labels = sorted.map(x => x[0]);
+      const values = sorted.map(x => x[1]);
+
+      const maxValue = Math.max(...values, 0);
+      const scaledMax = Math.ceil(maxValue * 1.1);
+
+      dashboardCharts.topContrib.data.labels = labels;
+      dashboardCharts.topContrib.data.datasets[0].data = values;
+      dashboardCharts.topContrib.options.scales.x.max = scaledMax;
+      dashboardCharts.topContrib.update();
+    }
+
+    function updateLineComparisonChart() {
+      const counts = {};
+      currentData.forEach(d => {
+        const line = d.productionLine || 'Unknown';
+        counts[line] = (counts[line] || 0) + 1;
+      });
+
+      const sorted = Object.entries(counts)
+        .sort((a,b) => b[1] - a[1]);
+
+      const labels = sorted.map(x => x[0]);
+      const values = sorted.map(x => x[1]);
+
+      dashboardCharts.lineComp.data.labels = labels;
+      dashboardCharts.lineComp.data.datasets[0].data = values;
+      dashboardCharts.lineComp.update();
+    }
+
+    function updatePlantMonthlyChart() {
+      const months = getLastNMonths(6);
+      const labels = months.map(d => d.toLocaleDateString(undefined, { month: 'short' }));
+      const now = new Date();
+
+      const plants = [...new Set(currentData.map(d => d.plant || 'Unknown'))];
+      const colors = ['#667eea', '#764ba2', '#f093fb', '#42A5F5', '#ef6c00', '#4CAF50'];
+
+      const datasets = plants.map((plant, idx) => {
+        const counts = months.map((month, index) => {
+          const monthStart = new Date(month);
+          monthStart.setHours(0, 0, 0, 0);
+          
+          let monthEnd;
+          const isCurrentMonth = (index === months.length - 1);
+          
+          if (isCurrentMonth) {
+            // For current month: count up to NOW
+            monthEnd = new Date(now);
+          } else {
+            // For past months: count full month
+            monthEnd = new Date(month);
+            monthEnd.setMonth(monthEnd.getMonth() + 1);
+            monthEnd.setHours(0, 0, 0, 0);
+          }
+          
+          return currentData.filter(item => {
+            const ts = toDate(item.timestamp);
+            return ts && ts >= monthStart && ts <= monthEnd && (item.plant || 'Unknown') === plant;
+          }).length;
+        });
+
+        return {
+          label: plant,
+          data: counts,
+          borderColor: colors[idx % colors.length],
+          backgroundColor: colors[idx % colors.length] + '20',
+          tension: 0.3,
+          borderWidth: 2,
+          pointRadius: 4
+        };
+      });
+
+      dashboardCharts.plantMonth.data.labels = labels;
+      dashboardCharts.plantMonth.data.datasets = datasets;
+      dashboardCharts.plantMonth.update();
+    }
+
+    function updateOperatorLeaderboard() {
+      // Get last 6 months
+      const now = new Date();
+      const months = [];
+      
+      for (let i = 0; i < 6; i++) {
+        const monthDate = new Date(now);
+        monthDate.setMonth(monthDate.getMonth() - i);
+        monthDate.setDate(1);
+        monthDate.setHours(0, 0, 0, 0);
+        
+        const monthEnd = new Date(monthDate);
+        monthEnd.setMonth(monthEnd.getMonth() + 1);
+        monthEnd.setDate(0);
+        monthEnd.setHours(23, 59, 59, 999);
+        
+        const monthName = monthDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+        
+        months.push({ start: monthDate, end: monthEnd, name: monthName });
+      }
+      
+      // Update month headers
+      document.getElementById('month1Header').textContent = months[0].name;
+      document.getElementById('month2Header').textContent = months[1].name;
+      document.getElementById('month3Header').textContent = months[2].name;
+      document.getElementById('month4Header').textContent = months[3].name;
+      document.getElementById('month5Header').textContent = months[4].name;
+      
+      // Calculate operator data with plant info
+      const operatorData = {};
+      
+      currentData.forEach(d => {
+        const op = d.operatorName || 'NA';
+        const plant = d.plant || 'Unknown';
+        const key = `${op}|||${plant}`; // Unique key for operator + plant
+        
+        if (!operatorData[key]) {
+          operatorData[key] = { operator: op, plant: plant, total: 0, last2Months: 0, months: [0, 0, 0, 0, 0, 0] };
+        }
+        
+        operatorData[key].total++;
+        
+        // Check which month this entry belongs to
+        const ts = toDate(d.timestamp);
+        if (ts) {
+          for (let i = 0; i < 6; i++) {
+            if (ts >= months[i].start && ts <= months[i].end) {
+              operatorData[key].months[i]++;
+              
+// Add to last 2 months count (months 0, 1)
+              if (i < 2) {
+                operatorData[key].last2Months++;
+              }
+              break;
+            }
+          }
+        }
+      });
+      
+// Sort by LAST 2 MONTHS total (descending) and take top 5
+      const sorted = Object.values(operatorData)
+        .sort((a, b) => b.last2Months - a.last2Months)
+        .slice(0, 5);
+      
+      // Populate table
+      const tbody = document.getElementById('leaderboardTable');
+      tbody.innerHTML = '';
+      
+      sorted.forEach((item, idx) => {
+        const row = tbody.insertRow();
+        const rankClass = idx === 0 ? 'rank-1' : idx === 1 ? 'rank-2' : idx === 2 ? 'rank-3' : 'rank-other';
+        
+        row.innerHTML = `
+          <td><span class="rank-badge ${rankClass}">${idx + 1}</span></td>
+          <td style="text-align:left;font-weight:600">${item.operator} <span style="color:#666;font-weight:400">(${item.plant})</span></td>
+          <td style="font-weight:700;color:#f44336">${item.total}</td>
+          <td>${item.months[0]}</td>
+          <td>${item.months[1]}</td>
+          <td>${item.months[2]}</td>
+          <td>${item.months[3]}</td>
+          <td>${item.months[4]}</td>
+        `;
+      });
+    }
+
+    function updateReportsTable() {
+      const tbody = document.getElementById('reportsTable');
+      tbody.innerHTML = '';
+      
+      const recent = currentData.slice(0, 50);
+      recent.forEach(item => {
+        const row = tbody.insertRow();
+        const ts = toDate(item.timestamp);
+        row.innerHTML = `
+          <td>${ts ? ts.toLocaleString() : ''}</td>
+          <td>${item.type || ''}</td>
+          <td>${item.productionLine || ''}</td>
+          <td>${item.plant || ''}</td>
+          <td>${item.defectType || ''}</td>
+          <td>${item.joint || ''}</td>
+          <td><span class="severity-badge severity-${(item.severity || '').toLowerCase()}">${item.severity || ''}</span></td>
+          <td>${item.shift || ''}</td>
+          <td>${item.action || ''}</td>
+          <td>${item.operatorName || ''}</td>
+        `;
+      });
+    }
+
+function exportLastMonthToExcel() {
+      const now = new Date();
+      const lastMonth = new Date(now);
+      lastMonth.setMonth(lastMonth.getMonth() - 1);
+      lastMonth.setDate(1);
+      lastMonth.setHours(0, 0, 0, 0);
+      
+      const lastMonthEnd = new Date(now);
+      lastMonthEnd.setDate(0);
+      lastMonthEnd.setHours(23, 59, 59, 999);
+      
+      const lastMonthName = lastMonth.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      
+      const lastMonthData = currentData.filter(d => {
+        const ts = toDate(d.timestamp);
+        return ts && ts >= lastMonth && ts <= lastMonthEnd;
+      });
+      
+      const data = lastMonthData.map(item => {
+        const ts = toDate(item.timestamp);
+        return {
+          'Timestamp': ts ? ts.toLocaleString() : '',
+          'Unit Type': item.type || '',
+          'Production Line': item.productionLine || '',
+          'Plant': item.plant || '',
+          'Defect Type': item.defectType || '',
+          'Joint Number': item.joint || '',
+          'Severity': item.severity || '',
+          'Shift': item.shift || '',
+          'Action Taken': item.action || '',
+          'Operator': item.operatorName || '',
+          'Remarks': item.remarks || '',
+          'Reported By': item.reportedBy || ''
+        };
+      });
+      
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, lastMonthName + ' Reports');
+      
+      const summary = [
+        { Metric: 'Total Leakages', Value: lastMonthData.length },
+        { Metric: 'Critical Issues', Value: lastMonthData.filter(d => d.severity === 'Critical').length },
+        { Metric: 'Major Issues', Value: lastMonthData.filter(d => d.severity === 'Major').length },
+        { Metric: 'Minor Issues', Value: lastMonthData.filter(d => d.severity === 'Minor').length },
+        { Metric: 'Rework Count', Value: lastMonthData.filter(d => d.action === 'Rework').length },
+        { Metric: 'Scrap Count', Value: lastMonthData.filter(d => d.action === 'Scrap').length },
+        { Metric: 'Accepted Count', Value: lastMonthData.filter(d => d.action === 'Accepted').length }
+      ];
+      
+      const ws2 = XLSX.utils.json_to_sheet(summary);
+      XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+      
+      XLSX.writeFile(wb, 'AC_Leakage_' + lastMonthName + '_' + new Date().toISOString().split('T')[0] + '.xlsx');
+    }
+
+    function exportToExcel() {
+      const data = currentData.map(item => {
+        const ts = toDate(item.timestamp);
+        return {
+          'Timestamp': ts ? ts.toLocaleString() : '',
+          'Unit Type': item.type || '',
+          'Production Line': item.productionLine || '',
+          'Plant': item.plant || '',
+          'Defect Type': item.defectType || '',
+          'Joint Number': item.joint || '',
+          'Severity': item.severity || '',
+          'Shift': item.shift || '',
+          'Action Taken': item.action || '',
+          'Operator': item.operatorName || '',
+          'Remarks': item.remarks || '',
+          'Reported By': item.reportedBy || ''
+        };
+      });
+      
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Leakage Reports');
+      
+      const summary = [
+        { Metric: 'Total Leakages', Value: currentData.length },
+        { Metric: 'Critical Issues', Value: currentData.filter(d => d.severity === 'Critical').length },
+        { Metric: 'Major Issues', Value: currentData.filter(d => d.severity === 'Major').length },
+        { Metric: 'Minor Issues', Value: currentData.filter(d => d.severity === 'Minor').length },
+        { Metric: 'Rework Count', Value: currentData.filter(d => d.action === 'Rework').length },
+        { Metric: 'Scrap Count', Value: currentData.filter(d => d.action === 'Scrap').length },
+        { Metric: 'Accepted Count', Value: currentData.filter(d => d.action === 'Accepted').length }
+      ];
+      
+      const ws2 = XLSX.utils.json_to_sheet(summary);
+      XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+      
+      XLSX.writeFile(wb, 'AC_Leakage_Report_' + new Date().toISOString().split('T')[0] + '.xlsx');
+    }
+
+    async function fetchSheetReports(force) {
+      const shouldForce = force === true;
+      const now = Date.now();
+      if (!shouldForce && sheetReportsCache.length && (now - lastSheetFetchAt) < SHEET_FETCH_COOLDOWN_MS) {
+        return true;
+      }
+      if (sheetFetchInFlight) return sheetFetchInFlight;
+      sheetFetchInFlight = (async () => {
+        try {
+          const result = await otpRequest('getDefectReports', { limit: 1200, t: now });
+          sheetReportsCache = Array.isArray(result.reports) ? result.reports : [];
+          lastSheetFetchAt = Date.now();
+          return true;
+        } catch (e) {
+          console.warn('Sheet report sync failed:', e && e.message ? e.message : e);
+          // Never keep stale data in memory if sync fails.
+          sheetReportsCache = [];
+          return false;
+        } finally {
+          sheetFetchInFlight = null;
+        }
+      })();
+      return sheetFetchInFlight;
+    }
+    function inferLocationFromPlant(plantName) {
+      const plant = String(plantName || '').trim().toUpperCase();
+      if (plant === 'NGM') return 'Supa';
+      if (plant === 'PGTL') return 'Pune';
+      return 'Pune';
+    }
+    function processSnapshotRoot(root) {
+      const data = [];
+      const legacy = root.leakageReports || {};
+      Object.keys(legacy).forEach((k) => {
+        const plant = canonicalPlantName(legacy[k].plant || 'PGTL');
+        // Business rule: all Firebase main dashboard data belongs to Pune scope.
+        data.push({ ...legacy[k], id: k, location: 'Pune', plant });
+      });
+      const segregated = root.leakageReportsByPlant || {};
+      Object.keys(segregated).forEach((plantName) => {
+        const plantReports = segregated[plantName] || {};
+        Object.keys(plantReports).forEach((k) => {
+          data.push({
+            ...plantReports[k],
+            id: `${plantName}_${k}`,
+            plant: canonicalPlantName(plantReports[k].plant || plantName),
+            // Business rule: all Firebase main dashboard data belongs to Pune scope.
+            location: 'Pune'
+          });
+        });
+      });
+      sheetReportsCache.forEach((r, idx) => {
+        data.push({
+          ...r,
+          id: r.id || `sheet_${idx}_${r.timestamp || ''}`,
+          location: r.location || 'Pune',
+          plant: canonicalPlantName(r.plant || '')
+        });
+      });
+      data.sort((a, b) => (toDate(b.timestamp) || 0) - (toDate(a.timestamp) || 0));
+      const scoped = data.filter(r => canViewRecord(r));
+      const sigSlice = scoped.slice(0, 40).map((x) => `${x.id || ''}:${x.timestamp || ''}`).join('|');
+      const nextSignature = `${scoped.length}|${sigSlice}`;
+      if (nextSignature === lastDataSignature) return;
+      lastDataSignature = nextSignature;
+      currentData = scoped;
+      scheduleRefreshUI();
+    }
+    async function fetchFirebaseSnapshotOnce() {
+      await fetchSheetReports();
+      database.ref('/').once('value').then((snapshot) => {
+        processSnapshotRoot(snapshot.val() || {});
+        showNotice('Dashboard refreshed.', 'success');
+      }).catch((error) => {
+        console.error('Firebase read error:', error);
+        showNotice('Failed to refresh dashboard.', 'error');
+        updateConnectionStatus(false);
+      });
+    }
+    function loadFirebaseData() {
+      if (!database) {
+        console.error('Firebase not initialized');
+        return;
+      }
+      if (firebaseListenerBound) return;
+      firebaseListenerBound = true;
+      fetchSheetReports().then(() => {
+        database.ref('/').once('value').then((snapshot) => processSnapshotRoot(snapshot.val() || {}));
+      });
+      database.ref('/').on('value', (snapshot) => {
+        processSnapshotRoot(snapshot.val() || {});
+      }, (error) => {
+        console.error('Firebase read error:', error);
+        showNotice('Realtime connection error.', 'error');
+        updateConnectionStatus(false);
+      });
+    }
+
+    window.onload = function() {
+      if (isMobileClient()) {
+        blockMobileIndexAccess();
+        return;
+      }
+      loadAppConfig();
+      if (!checkAuthStatus()) {
+        document.getElementById('loginEmail').focus();
+      } else {
+        reloadConfigFromSheet('session_restore').finally(() => {
+          initCharts();
+          if (database) loadFirebaseData();
+          else updateConnectionStatus(false);
+        });
+      }
+      setInterval(() => {
+        if (!isAuthenticated) return;
+        fetchSheetReports().then(() => {
+          if (database) database.ref('/').once('value').then((snapshot) => processSnapshotRoot(snapshot.val() || {}));
+        });
+      }, SHEET_FETCH_COOLDOWN_MS);
+      document.addEventListener('click', function(e){
+        const menu = document.getElementById('accountMenu');
+        if (menu && !menu.contains(e.target)) menu.classList.remove('open');
+      });
+    };
+  </script>
+
+</body>
+</html>
