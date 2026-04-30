@@ -761,7 +761,7 @@ Copper: {
             return {
                 Indoor: make('Indoor', 'Indoor Line', 5, 'indoor1.png', 'indoor2.png', 'Indoor View 1 (Joints 1-8)', 'Indoor View 2 (Joints 9-16)'),
                 Outdoor: make('Outdoor', 'Outdoor Line', 8, 'outdoor1.png', 'outdoor2.png', 'Outdoor View 1 (Joints 1-14)', 'Outdoor View 2 (Joints 15-27)'),
-                Condenser: make('Condenser', 'Condenser Line', 3, 'condenser2.png', 'condenser2.png', 'Condenser View 1', 'Condenser View 2'),
+                Condenser: make('Condenser', 'Condenser Line', 3, 'condenser1.png', 'condenser2.png', 'Condenser View 1', 'Condenser View 2'),
                 Evaporator: make('Evaporator', 'Evaporator Line', 3, 'evaporator1.png', 'evaporator2.png', 'Evaporator View 1', 'Evaporator View 2'),
                 Copper: make('Copper', 'Copper Line', 2, 'copper1.png', 'copper2.png', 'Copper View 1', 'Copper View 2')
             };
@@ -1433,7 +1433,7 @@ Copper: {
         jointSelect.appendChild(option);
     }                
                 // Update images
-                document.getElementById('componentImage1').innerHTML = '<img src="condenser2.png" alt="Condenser Component 1" style="max-width: 100%; height: auto;" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder-image\\\'>Condenser Component View 1</div>\'">';
+                document.getElementById('componentImage1').innerHTML = '<img src="condenser1.png" alt="Condenser Component 1" style="max-width: 100%; height: auto;" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder-image\\\'>Condenser Component View 1</div>\'">';
                 document.getElementById('componentImage2').innerHTML = '<img src="condenser2.png" alt="Condenser Component 2" style="max-width: 100%; height: auto;" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder-image\\\'>Condenser Component View 2</div>\'">';
                 document.getElementById('imageLabel1').textContent = 'Condenser View 1';
                 document.getElementById('imageLabel2').textContent = 'Condenser View 2';
