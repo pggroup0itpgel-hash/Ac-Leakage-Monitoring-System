@@ -1240,10 +1240,19 @@
       const otpInput = document.getElementById('loginOtp');
       const emailInput = document.getElementById('loginEmail');
       if (mode === 'send' && sendBtn) {
-        sendBtn.disabled = !!busy;
-        sendBtn.style.opacity = busy ? '0.7' : '1';
-        sendBtn.style.pointerEvents = busy ? 'none' : 'auto';
-        sendBtn.textContent = busy ? 'Sending...' : 'Send OTP';
+        const otpRowVisible = document.getElementById('otpRow')?.style.display !== 'none';
+        // Once OTP row is visible, never allow "Send OTP" again (use Resend OTP / Change email).
+        if (otpRowVisible && !busy) {
+          sendBtn.disabled = true;
+          sendBtn.style.opacity = '0.7';
+          sendBtn.style.pointerEvents = 'none';
+          sendBtn.textContent = 'OTP Sent';
+        } else {
+          sendBtn.disabled = !!busy;
+          sendBtn.style.opacity = busy ? '0.7' : '1';
+          sendBtn.style.pointerEvents = busy ? 'none' : 'auto';
+          sendBtn.textContent = busy ? 'Sending...' : 'Send OTP';
+        }
       }
       if (mode === 'verify' && verifyBtn) {
         verifyBtn.disabled = !!busy;
