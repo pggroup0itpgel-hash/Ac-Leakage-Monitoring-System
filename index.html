@@ -106,6 +106,18 @@
     .rank-3{background:#FFC107}
     .rank-other{background:#9E9E9E}
 
+    /* Filters panel */
+    .filters-wrap{background:#fff;border-radius:12px;box-shadow:0 3px 10px rgba(0,0,0,0.06);padding:10px 12px;margin:12px 0;display:none}
+    .filters-grid{display:flex;flex-wrap:nowrap;gap:10px;align-items:end;overflow-x:auto;padding-bottom:2px}
+    .filter-field label{display:block;font-size:11px;color:#6b7280;margin-bottom:4px;font-weight:700}
+    .filter-field{min-width:160px}
+    .filter-field select,.filter-field input{width:100%;padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;background:#fff}
+    .filters-actions{display:flex;gap:8px;justify-content:flex-end;align-items:center}
+    .filters-actions .btn{padding:9px 12px}
+    .filters-summary{font-size:12px;color:#374151;margin-top:8px}
+    .filters-summary b{color:#111827}
+    .filters-actions{min-width:200px}
+
     /* Reports table */
     .reports-box{background:#fff;padding:12px;border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,0.06);margin-top:10px;height:300px}
     .reports-box h3{margin-bottom:8px;font-size:13px;color:#333;font-weight:700}
@@ -291,6 +303,7 @@
             <span class="live-text">LIVE</span>
           </div>
           <button class="access-indicator" id="accessIndicatorBtn" title="Current location scope">Location: -</button>
+          <select id="navLocationSelect" class="access-indicator" style="display:none;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.15);color:#fff;font-weight:700;font-size:12px"></select>
 <div class="dropdown">
             <button class="btn btn-excel">📊 Excel ▼</button>
             <div class="dropdown-content">
@@ -299,6 +312,7 @@
             </div>
           </div>
           <button class="btn" id="settingsBtn" onclick="openSettings()" style="display:none;background:#2e7d32;">⚙ Settings</button>
+          <button class="btn" id="filtersToggleBtn" onclick="toggleFiltersPanel()" style="background:#1f6feb;">🔎 Filters</button>
           <button class="btn" onclick="refreshDashboard()">🔄 Refresh</button>
           <div class="account-menu" id="accountMenu">
             <button class="account-btn" onclick="toggleAccountMenu()">👤 Account</button>
@@ -313,6 +327,48 @@
     </div>
 
     <div class="container">
+      <!-- Filters (hidden by default; toggled from navbar) -->
+      <div id="filtersWrap" class="filters-wrap">
+        <div class="filters-grid">
+          <div class="filter-field">
+            <label>Location</label>
+            <select id="fltLocation" onchange="onFilterLocationChange()"><option value="">All Locations</option></select>
+          </div>
+          <div class="filter-field">
+            <label>Plant</label>
+            <select id="fltPlant" onchange="onFilterPlantChange()"><option value="">All Plants</option></select>
+          </div>
+          <div class="filter-field">
+            <label>Line</label>
+            <select id="fltLine"><option value="">All Lines</option></select>
+          </div>
+          <div class="filter-field">
+            <label>Defect type</label>
+            <select id="fltDefect"><option value="">All Defects</option></select>
+          </div>
+          <div class="filter-field">
+            <label>Severity</label>
+            <select id="fltSeverity"><option value="">All Severities</option></select>
+          </div>
+          <div class="filter-field">
+            <label>Action</label>
+            <select id="fltAction"><option value="">All Actions</option></select>
+          </div>
+          <div class="filter-field">
+            <label>Date from</label>
+            <input id="fltFrom" type="date">
+          </div>
+          <div class="filter-field">
+            <label>Date to</label>
+            <input id="fltTo" type="date">
+          </div>
+          <div class="filters-actions">
+            <button class="btn" onclick="resetFiltersUI()" style="background:#9e9e9e">Reset</button>
+            <button class="btn" onclick="applyFiltersUI()" style="background:#5a67d8">Apply</button>
+          </div>
+        </div>
+        <div class="filters-summary" id="filtersSummary">Showing <b>All data</b> within your access scope.</div>
+      </div>
 <!-- Stats + QR -->
       <div class="stats-grid">
         <div class="stat-card blue">
@@ -682,7 +738,8 @@
     const APP_STATE = {
       user: null,
       profile: null,
-      config: null
+      config: null,
+      uiFilters: null
     };
     let isAuthenticated = false;
     let sheetReportsCache = [];
@@ -1277,6 +1334,337 @@
       const label = locs.includes('*') ? 'All Locations' : (locs.join(', ') || '-');
       b.textContent = `Location: ${label}`;
       b.title = b.textContent;
+      setupNavLocationScope();
+      ensureFiltersState();
+      syncFilterUIFromState();
+      populateFilterControls();
+    }
+
+    function ensureFiltersState() {
+      if (APP_STATE.uiFilters) return;
+      APP_STATE.uiFilters = {
+        open: false,
+        location: '',
+        plant: '',
+        line: '',
+        defectType: '',
+        severity: '',
+        action: '',
+        dateFrom: '',
+        dateTo: ''
+      };
+    }
+
+    function toggleFiltersPanel() {
+      ensureFiltersState();
+      APP_STATE.uiFilters.open = !APP_STATE.uiFilters.open;
+      const wrap = document.getElementById('filtersWrap');
+      if (wrap) wrap.style.display = APP_STATE.uiFilters.open ? 'block' : 'none';
+      if (APP_STATE.uiFilters.open) {
+        populateFilterControls();
+        syncFilterUIFromState();
+      }
+    }
+
+    function setupNavLocationScope() {
+      const sel = document.getElementById('navLocationSelect');
+      const btn = document.getElementById('accessIndicatorBtn');
+      if (!sel || !btn) return;
+      const locs = toScopeList(APP_STATE.profile?.allowedLocations);
+      const canPick = locs.includes('*');
+      sel.style.display = canPick ? 'inline-block' : 'none';
+      btn.style.display = canPick ? 'none' : 'inline-block';
+      if (!canPick) return;
+
+      const cfg = APP_STATE.config || {};
+      const all = getLocationNames(cfg).filter((l) => canViewLocation(l));
+      sel.innerHTML = '';
+      const optAll = document.createElement('option');
+      optAll.value = '';
+      optAll.textContent = 'All Locations';
+      sel.appendChild(optAll);
+      all.forEach((l) => {
+        const o = document.createElement('option');
+        o.value = l;
+        o.textContent = l;
+        sel.appendChild(o);
+      });
+
+      ensureFiltersState();
+      sel.value = APP_STATE.uiFilters.location || '';
+      sel.onchange = function() {
+        ensureFiltersState();
+        APP_STATE.uiFilters.location = sel.value || '';
+        APP_STATE.uiFilters.plant = '';
+        APP_STATE.uiFilters.line = '';
+        syncFilterUIFromState();
+        populateFilterControls();
+        scheduleRefreshUI();
+      };
+    }
+
+    function parseDateOnly(iso) {
+      const s = String(iso || '').trim();
+      if (!s) return null;
+      const dt = new Date(s + 'T00:00:00');
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+
+    function getEffectiveAnchorDate() {
+      ensureFiltersState();
+      const to = parseDateOnly(APP_STATE.uiFilters.dateTo);
+      const from = parseDateOnly(APP_STATE.uiFilters.dateFrom);
+      return to || from || new Date();
+    }
+
+    function monthLabel(d) {
+      const dt = d instanceof Date ? d : toDate(d);
+      if (!dt) return '';
+      return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    }
+
+    function getFilteredData() {
+      ensureFiltersState();
+      const f = APP_STATE.uiFilters || {};
+      const loc = canonicalLocationName(f.location);
+      const plant = canonicalPlantName(f.plant);
+      const line = String(f.line || '').trim();
+      const defectType = String(f.defectType || '').trim();
+      const severity = String(f.severity || '').trim();
+      const action = String(f.action || '').trim();
+      const from = parseDateOnly(f.dateFrom);
+      const to = parseDateOnly(f.dateTo);
+      const toEnd = to ? new Date(to) : null;
+      if (toEnd) toEnd.setDate(toEnd.getDate() + 1);
+
+      return (currentData || []).filter((r) => {
+        if (loc) {
+          const rLoc = canonicalLocationName(r.location || 'Pune');
+          if (rLoc !== loc) return false;
+        }
+        if (plant) {
+          const rPlant = canonicalPlantName(r.plant || '');
+          if (!rPlant || rPlant !== plant) return false;
+        }
+        if (line) {
+          const rLine = String(r.line || r.productionLine || '').trim();
+          if (rLine !== line) return false;
+        }
+        if (defectType) {
+          const rDef = String(r.defectType || '').trim();
+          if (rDef !== defectType) return false;
+        }
+        if (severity) {
+          const rSev = String(r.severity || '').trim();
+          if (rSev !== severity) return false;
+        }
+        if (action) {
+          const rAct = String(r.action || '').trim();
+          if (rAct !== action) return false;
+        }
+        const ts = toDate(r.timestamp);
+        if (!ts) return false;
+        if (from && ts < from) return false;
+        if (toEnd && ts >= toEnd) return false;
+        return true;
+      });
+    }
+
+    function syncFilterUIFromState() {
+      ensureFiltersState();
+      const f = APP_STATE.uiFilters;
+      const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+      setVal('fltLocation', f.location);
+      setVal('fltPlant', f.plant);
+      setVal('fltLine', f.line);
+      setVal('fltDefect', f.defectType);
+      setVal('fltSeverity', f.severity);
+      setVal('fltAction', f.action);
+      setVal('fltFrom', f.dateFrom);
+      setVal('fltTo', f.dateTo);
+      const navSel = document.getElementById('navLocationSelect');
+      if (navSel && navSel.style.display !== 'none') navSel.value = f.location || '';
+      const wrap = document.getElementById('filtersWrap');
+      if (wrap) wrap.style.display = f.open ? 'block' : 'none';
+    }
+
+    function onFilterLocationChange() {
+      const locSel = document.getElementById('fltLocation');
+      const plantSel = document.getElementById('fltPlant');
+      const lineSel = document.getElementById('fltLine');
+      if (plantSel) plantSel.value = '';
+      if (lineSel) lineSel.value = '';
+      if (locSel) {
+        ensureFiltersState();
+        APP_STATE.uiFilters.location = locSel.value || '';
+        APP_STATE.uiFilters.plant = '';
+        APP_STATE.uiFilters.line = '';
+      }
+      populateFilterControls();
+      scheduleRefreshUI();
+    }
+
+    function onFilterPlantChange() {
+      const plantSel = document.getElementById('fltPlant');
+      const lineSel = document.getElementById('fltLine');
+      if (lineSel) lineSel.value = '';
+      if (plantSel) {
+        ensureFiltersState();
+        APP_STATE.uiFilters.plant = plantSel.value || '';
+        APP_STATE.uiFilters.line = '';
+      }
+      populateFilterControls();
+      scheduleRefreshUI();
+    }
+
+    function populateFilterControls() {
+      ensureFiltersState();
+      const cfg = APP_STATE.config || {};
+      const f = APP_STATE.uiFilters || {};
+
+      const locSel = document.getElementById('fltLocation');
+      const plantSel = document.getElementById('fltPlant');
+      const lineSel = document.getElementById('fltLine');
+      const defectSel = document.getElementById('fltDefect');
+      const sevSel = document.getElementById('fltSeverity');
+      const actSel = document.getElementById('fltAction');
+
+      if (locSel) {
+        const locs = getLocationNames(cfg).filter((l) => canViewLocation(l));
+        locSel.innerHTML = '';
+        const ph = document.createElement('option'); ph.value = ''; ph.textContent = 'All Locations'; locSel.appendChild(ph);
+        locs.forEach((l) => { const o=document.createElement('option'); o.value=l; o.textContent=l; locSel.appendChild(o); });
+        locSel.value = f.location || '';
+      }
+
+      const selectedLocKey = (function(){
+        const locRaw = f.location || '';
+        if (!locRaw) return '';
+        const norm = canonicalLocationName(locRaw);
+        return Object.keys((cfg && cfg.locations) || {}).find((k) => canonicalLocationName(k) === norm) || locRaw;
+      })();
+
+      let plants = [];
+      if (selectedLocKey) {
+        const pl = (((cfg.locations || {})[selectedLocKey] || {}).plants) || {};
+        plants = Object.keys(pl).filter((p) => canViewPlant(p)).sort();
+      } else {
+        const allPlants = [];
+        Object.keys((cfg.locations || {})).forEach((lk) => {
+          if (!canViewLocation(lk)) return;
+          const pl = (((cfg.locations || {})[lk] || {}).plants) || {};
+          Object.keys(pl).forEach((p) => { if (canViewPlant(p)) allPlants.push(p); });
+        });
+        plants = Array.from(new Set(allPlants)).sort();
+      }
+      if (plantSel) {
+        plantSel.innerHTML = '';
+        const ph = document.createElement('option'); ph.value = ''; ph.textContent = 'All Plants'; plantSel.appendChild(ph);
+        plants.forEach((p) => { const o=document.createElement('option'); o.value=p; o.textContent=p; plantSel.appendChild(o); });
+        plantSel.value = f.plant || '';
+      }
+
+      let lines = [];
+      if (selectedLocKey && f.plant) {
+        const plantsObj = (((cfg.locations || {})[selectedLocKey] || {}).plants) || {};
+        const plantKey = Object.keys(plantsObj).find((p) => canonicalPlantName(p) === canonicalPlantName(f.plant)) || f.plant;
+        const ln = (((plantsObj[plantKey] || {}).lines) || []);
+        lines = ln.slice().sort();
+      }
+      if (lineSel) {
+        lineSel.innerHTML = '';
+        const ph = document.createElement('option'); ph.value = ''; ph.textContent = 'All Lines'; lineSel.appendChild(ph);
+        lines.forEach((l) => { const o=document.createElement('option'); o.value=l; o.textContent=l; lineSel.appendChild(o); });
+        lineSel.value = f.line || '';
+      }
+
+      let defects = [];
+      if (selectedLocKey && cfg.defectsByLocation && cfg.defectsByLocation[selectedLocKey]) {
+        defects = (cfg.defectsByLocation[selectedLocKey] || []).slice();
+      } else {
+        const data = getFilteredData();
+        const s = new Set();
+        data.forEach((r) => { const v = String(r.defectType || '').trim(); if (v) s.add(v); });
+        defects = Array.from(s);
+      }
+      defects = defects.filter(Boolean).sort();
+      if (defectSel) {
+        defectSel.innerHTML = '';
+        const ph = document.createElement('option'); ph.value = ''; ph.textContent = 'All Defects'; defectSel.appendChild(ph);
+        defects.forEach((d) => { const o=document.createElement('option'); o.value=d; o.textContent=d; defectSel.appendChild(o); });
+        defectSel.value = f.defectType || '';
+      }
+
+      const base = currentData || [];
+      const sevSet = new Set();
+      const actSet = new Set();
+      base.forEach((r) => {
+        const sv = String(r.severity || '').trim(); if (sv) sevSet.add(sv);
+        const ac = String(r.action || '').trim(); if (ac) actSet.add(ac);
+      });
+      const severities = Array.from(sevSet).sort();
+      const actions = Array.from(actSet).sort();
+      if (sevSel) {
+        sevSel.innerHTML = '';
+        const ph = document.createElement('option'); ph.value=''; ph.textContent='All Severities'; sevSel.appendChild(ph);
+        severities.forEach((s) => { const o=document.createElement('option'); o.value=s; o.textContent=s; sevSel.appendChild(o); });
+        sevSel.value = f.severity || '';
+      }
+      if (actSel) {
+        actSel.innerHTML = '';
+        const ph = document.createElement('option'); ph.value=''; ph.textContent='All Actions'; actSel.appendChild(ph);
+        actions.forEach((a) => { const o=document.createElement('option'); o.value=a; o.textContent=a; actSel.appendChild(o); });
+        actSel.value = f.action || '';
+      }
+
+      updateFiltersSummary();
+    }
+
+    function updateFiltersSummary() {
+      const el = document.getElementById('filtersSummary');
+      if (!el) return;
+      ensureFiltersState();
+      const f = APP_STATE.uiFilters || {};
+      const parts = [];
+      if (f.location) parts.push(`Location: <b>${f.location}</b>`);
+      if (f.plant) parts.push(`Plant: <b>${f.plant}</b>`);
+      if (f.line) parts.push(`Line: <b>${f.line}</b>`);
+      if (f.defectType) parts.push(`Defect: <b>${f.defectType}</b>`);
+      if (f.severity) parts.push(`Severity: <b>${f.severity}</b>`);
+      if (f.action) parts.push(`Action: <b>${f.action}</b>`);
+      if (f.dateFrom || f.dateTo) parts.push(`Date: <b>${f.dateFrom || '…'}</b> → <b>${f.dateTo || '…'}</b>`);
+      el.innerHTML = parts.length ? ('Showing ' + parts.join(' | ')) : 'Showing <b>All data</b> within your access scope.';
+    }
+
+    function applyFiltersUI() {
+      ensureFiltersState();
+      const getVal = (id) => { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+      APP_STATE.uiFilters.location = getVal('fltLocation');
+      APP_STATE.uiFilters.plant = getVal('fltPlant');
+      APP_STATE.uiFilters.line = getVal('fltLine');
+      APP_STATE.uiFilters.defectType = getVal('fltDefect');
+      APP_STATE.uiFilters.severity = getVal('fltSeverity');
+      APP_STATE.uiFilters.action = getVal('fltAction');
+      APP_STATE.uiFilters.dateFrom = getVal('fltFrom');
+      APP_STATE.uiFilters.dateTo = getVal('fltTo');
+      setupNavLocationScope();
+      populateFilterControls();
+      scheduleRefreshUI();
+    }
+
+    function resetFiltersUI() {
+      ensureFiltersState();
+      APP_STATE.uiFilters.location = '';
+      APP_STATE.uiFilters.plant = '';
+      APP_STATE.uiFilters.line = '';
+      APP_STATE.uiFilters.defectType = '';
+      APP_STATE.uiFilters.severity = '';
+      APP_STATE.uiFilters.action = '';
+      APP_STATE.uiFilters.dateFrom = '';
+      APP_STATE.uiFilters.dateTo = '';
+      syncFilterUIFromState();
+      populateFilterControls();
+      scheduleRefreshUI();
     }
 
     function logoutUser() {
@@ -2205,13 +2593,15 @@ backgroundColor: '#ADB5E0',
     }
 
 function updateStats() {
-      // Get current and last month labels in MM:YY format
+      const data = getFilteredData();
+      const anchor = getEffectiveAnchorDate();
+      // Get current and last month labels in MM:YY format (based on filter date)
       const now = new Date();
-      const currentMonthName = now.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      const currentMonthName = monthLabel(anchor);
       
-      const lastMonthDate = new Date(now);
+      const lastMonthDate = new Date(anchor);
       lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
-      const lastMonthName = lastMonthDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      const lastMonthName = monthLabel(lastMonthDate);
       
 // Update card labels dynamically - NO brackets
       document.getElementById('currentMonthTotalLabel').textContent = `${currentMonthName} Total`;
@@ -2220,7 +2610,7 @@ function updateStats() {
       // Calculate Today's
       const todayStart = new Date(); 
       todayStart.setHours(0,0,0,0);
-      const todayCount = currentData.filter(d => {
+      const todayCount = data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= todayStart;
       }).length;
@@ -2230,7 +2620,7 @@ function updateStats() {
       yesterdayStart.setDate(yesterdayStart.getDate() - 1);
       const yesterdayEnd = new Date(todayStart);
       
-      const yesterdayData = currentData.filter(d => {
+      const yesterdayData = data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= yesterdayStart && ts < yesterdayEnd;
       });
@@ -2364,16 +2754,16 @@ function updateStats() {
       }
       
       // Calculate This Month
-      const currentMonth = new Date();
+      const currentMonth = new Date(anchor);
       currentMonth.setDate(1);
       currentMonth.setHours(0,0,0,0);
-      const thisMonthCount = currentData.filter(d => {
+      const thisMonthCount = data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= currentMonth;
       }).length;
       
       // Calculate Avg Daily
-      const dayOfMonth = now.getDate();
+      const dayOfMonth = (anchor && anchor instanceof Date) ? anchor.getDate() : now.getDate();
       const avgDaily = dayOfMonth > 0 ? (thisMonthCount / dayOfMonth).toFixed(1) : 0;
       
       // Calculate Last Month Total
@@ -2382,7 +2772,7 @@ function updateStats() {
       const lastMonthEnd = new Date(currentMonth);
       lastMonthEnd.setDate(0);
       lastMonthEnd.setHours(23,59,59,999);
-      const lastMonthCount = currentData.filter(d => {
+      const lastMonthCount = data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= lastMonth && ts <= lastMonthEnd;
       }).length;
@@ -2397,7 +2787,7 @@ function updateStats() {
       
 // Calculate Running Year (Aug'25 to Date)
       const runningYearStart = new Date('2025-08-01T00:00:00');
-      const runningYearTotal = currentData.filter(d => {
+      const runningYearTotal = data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= runningYearStart;
       }).length;
@@ -2413,14 +2803,19 @@ function updateStats() {
     }
 
     function updateTrendChart() {
+      const data = getFilteredData();
       const days = getLastNDates(7);
-      const labels = days.map(d => d.toLocaleDateString(undefined, { weekday: 'short' }));
+      const labels = days.map(d => {
+        const wd = d.toLocaleDateString(undefined, { weekday: 'short' });
+        const dd = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+        return `${wd} ${dd}`;
+      });
       const counts = days.map(day => {
         const dayStart = new Date(day);
         const dayEnd = new Date(day);
         dayEnd.setDate(dayEnd.getDate() + 1);
         
-        return currentData.filter(item => {
+        return data.filter(item => {
           const ts = toDate(item.timestamp);
           return ts && ts >= dayStart && ts < dayEnd;
         }).length;
@@ -2437,8 +2832,9 @@ function updateStats() {
     }
 
     function updatePlantChart() {
+      const data = getFilteredData();
       const counts = {};
-      currentData.forEach(d => {
+      data.forEach(d => {
         const p = d.plant || 'Unknown';
         counts[p] = (counts[p] || 0) + 1;
       });
@@ -2452,8 +2848,9 @@ function updateStats() {
     }
 
     function updateDefectChart() {
+      const data = getFilteredData();
       const counts = {};
-      currentData.forEach(d => {
+      data.forEach(d => {
         const defect = d.defectType || 'Unknown';
         counts[defect] = (counts[defect] || 0) + 1;
       });
@@ -2467,8 +2864,9 @@ function updateStats() {
     }
 
     function updateSeverityChart() {
+      const data = getFilteredData();
       const counts = {};
-      currentData.forEach(d => {
+      data.forEach(d => {
         const shift = d.shift || 'Unknown';
         counts[shift] = (counts[shift] || 0) + 1;
       });
@@ -2482,8 +2880,9 @@ function updateStats() {
     }
 
     function updateActionChart() {
+      const data = getFilteredData();
       const counts = {};
-      currentData.forEach(d => {
+      data.forEach(d => {
         const action = d.action || 'Unknown';
         counts[action] = (counts[action] || 0) + 1;
       });
@@ -2497,8 +2896,9 @@ function updateStats() {
     }
 
     function aggregateJointLeakages(unitType) {
+      const data = getFilteredData();
       const counts = {};
-      currentData.filter(d => d.type === unitType).forEach(d => {
+      data.filter(d => d.type === unitType).forEach(d => {
         const j = d.joint || 'Unknown';
         counts[j] = (counts[j] || 0) + 1;
       });
@@ -2522,15 +2922,16 @@ function updateStats() {
     }
 
 function updateJointCharts() {
-  const now = new Date();
-  const currentMonthName = now.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  const data = getFilteredData();
+  const anchor = getEffectiveAnchorDate();
+  const currentMonthName = monthLabel(anchor);
   document.getElementById('iduJointTitle').textContent = `🔩 Indoor Joint Pareto (${currentMonthName})`;
   document.getElementById('oduJointTitle').textContent = `🔩 Outdoor Joint Pareto (${currentMonthName})`;
   
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
+  const currentYear = anchor.getFullYear();
+  const currentMonth = anchor.getMonth();
   
-  const currentMonthData = currentData.filter(d => {
+  const currentMonthData = data.filter(d => {
     const ts = toDate(d.timestamp);
     if (!ts) return false;
     return ts.getFullYear() === currentYear && ts.getMonth() === currentMonth;
@@ -2599,6 +3000,7 @@ function updateJointCharts() {
 }
 
     function updateSixMonthTrendChart() {
+      const data = getFilteredData();
       const months = getLastNMonths(6);
       const labels = months.map(d => d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }));
       const now = new Date();
@@ -2621,7 +3023,7 @@ function updateJointCharts() {
         }
         
         const monthLabel = labels[index];
-        const count = currentData.filter(item => {
+        const count = data.filter(item => {
           const ts = toDate(item.timestamp);
           if (!ts) return false;
           const inRange = ts >= monthStart && ts <= monthEnd;
@@ -2636,10 +3038,11 @@ function updateJointCharts() {
     }
 
     function updateTopContributorsChart() {
+      const data = getFilteredData();
       const sixMonthsAgo = new Date();
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
       
-      const recentData = currentData.filter(d => {
+      const recentData = data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= sixMonthsAgo;
       });
@@ -2667,8 +3070,9 @@ function updateJointCharts() {
     }
 
     function updateLineComparisonChart() {
+      const data = getFilteredData();
       const counts = {};
-      currentData.forEach(d => {
+      data.forEach(d => {
         const line = d.productionLine || 'Unknown';
         counts[line] = (counts[line] || 0) + 1;
       });
@@ -2685,11 +3089,12 @@ function updateJointCharts() {
     }
 
     function updatePlantMonthlyChart() {
+      const data = getFilteredData();
       const months = getLastNMonths(6);
       const labels = months.map(d => d.toLocaleDateString(undefined, { month: 'short' }));
       const now = new Date();
 
-      const plants = [...new Set(currentData.map(d => d.plant || 'Unknown'))];
+      const plants = [...new Set(data.map(d => d.plant || 'Unknown'))];
       const colors = ['#667eea', '#764ba2', '#f093fb', '#42A5F5', '#ef6c00', '#4CAF50'];
 
       const datasets = plants.map((plant, idx) => {
@@ -2710,7 +3115,7 @@ function updateJointCharts() {
             monthEnd.setHours(0, 0, 0, 0);
           }
           
-          return currentData.filter(item => {
+          return data.filter(item => {
             const ts = toDate(item.timestamp);
             return ts && ts >= monthStart && ts <= monthEnd && (item.plant || 'Unknown') === plant;
           }).length;
@@ -2733,6 +3138,7 @@ function updateJointCharts() {
     }
 
     function updateOperatorLeaderboard() {
+      const data = getFilteredData();
       // Get last 6 months
       const now = new Date();
       const months = [];
@@ -2763,7 +3169,7 @@ function updateJointCharts() {
       // Calculate operator data with plant info
       const operatorData = {};
       
-      currentData.forEach(d => {
+      data.forEach(d => {
         const op = d.operatorName || 'NA';
         const plant = d.plant || 'Unknown';
         const key = `${op}|||${plant}`; // Unique key for operator + plant
@@ -2818,10 +3224,11 @@ function updateJointCharts() {
     }
 
     function updateReportsTable() {
+      const data = getFilteredData();
       const tbody = document.getElementById('reportsTable');
       tbody.innerHTML = '';
       
-      const recent = currentData.slice(0, 50);
+      const recent = data.slice(0, 50);
       recent.forEach(item => {
         const row = tbody.insertRow();
         const ts = toDate(item.timestamp);
@@ -3001,6 +3408,10 @@ function exportLastMonthToExcel() {
       if (nextSignature === lastDataSignature) return;
       lastDataSignature = nextSignature;
       currentData = scoped;
+      ensureFiltersState();
+      // Keep filter dropdown options in sync with latest data
+      syncFilterUIFromState();
+      if (APP_STATE.uiFilters.open) populateFilterControls();
       scheduleRefreshUI();
     }
     async function fetchFirebaseSnapshotOnce() {
