@@ -280,7 +280,11 @@
         <button onclick="sendOtp()" class="login-btn" id="sendOtpBtn">Send OTP</button>
         <div class="otp-row" id="otpRow" style="margin-top:10px;display:none">
           <input type="text" id="loginOtp" placeholder="Enter OTP">
-          <button onclick="verifyOtpLogin()" class="btn" style="background:#667eea">Verify OTP</button>
+          <button id="verifyOtpBtn" onclick="verifyOtpLogin()" class="btn" style="background:#667eea">Verify OTP</button>
+        </div>
+        <div id="otpActions" style="margin-top:8px;display:none;gap:10px;align-items:center;justify-content:center">
+          <button id="resendOtpBtn" class="btn" onclick="resendOtp()" style="background:#5a67d8;padding:8px 10px">Resend OTP</button>
+          <button id="changeEmailBtn" class="btn" onclick="changeOtpEmail()" style="background:#9e9e9e;padding:8px 10px">Change email</button>
         </div>
         <div class="login-help">OTP will be sent on authorized email.</div>
         <div id="loginError" class="login-error" style="display:none;">Login failed.</div>
@@ -1225,7 +1229,85 @@
       else sendOtp();
     }
 
+    let otpSendInFlight = false;
+    let otpVerifyInFlight = false;
+    let otpResendCooldownUntil = 0;
+
+    function setOtpUiBusy(mode, busy) {
+      const sendBtn = document.getElementById('sendOtpBtn');
+      const verifyBtn = document.getElementById('verifyOtpBtn');
+      const resendBtn = document.getElementById('resendOtpBtn');
+      const otpInput = document.getElementById('loginOtp');
+      const emailInput = document.getElementById('loginEmail');
+      if (mode === 'send' && sendBtn) {
+        sendBtn.disabled = !!busy;
+        sendBtn.style.opacity = busy ? '0.7' : '1';
+        sendBtn.style.pointerEvents = busy ? 'none' : 'auto';
+        sendBtn.textContent = busy ? 'Sending...' : 'Send OTP';
+      }
+      if (mode === 'verify' && verifyBtn) {
+        verifyBtn.disabled = !!busy;
+        verifyBtn.style.opacity = busy ? '0.7' : '1';
+        verifyBtn.style.pointerEvents = busy ? 'none' : 'auto';
+        verifyBtn.textContent = busy ? 'Verifying...' : 'Verify OTP';
+      }
+      if (resendBtn) {
+        const resendBusy = otpSendInFlight || Date.now() < otpResendCooldownUntil;
+        resendBtn.disabled = resendBusy;
+        resendBtn.style.opacity = resendBusy ? '0.7' : '1';
+        resendBtn.style.pointerEvents = resendBusy ? 'none' : 'auto';
+      }
+      if (otpInput) otpInput.disabled = otpVerifyInFlight;
+      if (emailInput) emailInput.disabled = otpSendInFlight || (document.getElementById('otpRow')?.style.display !== 'none');
+    }
+
+    function updateOtpActionsVisibility() {
+      const otpRow = document.getElementById('otpRow');
+      const actions = document.getElementById('otpActions');
+      if (!actions) return;
+      actions.style.display = (otpRow && otpRow.style.display !== 'none') ? 'flex' : 'none';
+      setOtpUiBusy('send', otpSendInFlight);
+      setOtpUiBusy('verify', otpVerifyInFlight);
+    }
+
+    async function resendOtp() {
+      // Resend uses same email; respects in-flight + cooldown.
+      return sendOtp();
+    }
+
+    function changeOtpEmail() {
+      otpSendInFlight = false;
+      otpVerifyInFlight = false;
+      otpResendCooldownUntil = 0;
+      window.localStorage.removeItem('emailForSignIn');
+      const otpRow = document.getElementById('otpRow');
+      const actions = document.getElementById('otpActions');
+      const otpInput = document.getElementById('loginOtp');
+      const emailInput = document.getElementById('loginEmail');
+      const sendBtn = document.getElementById('sendOtpBtn');
+      if (otpRow) otpRow.style.display = 'none';
+      if (actions) actions.style.display = 'none';
+      if (otpInput) otpInput.value = '';
+      if (emailInput) {
+        emailInput.disabled = false;
+        emailInput.focus();
+        try { emailInput.setSelectionRange(0, (emailInput.value || '').length); } catch {}
+      }
+      if (sendBtn) {
+        sendBtn.disabled = false;
+        sendBtn.style.opacity = '1';
+        sendBtn.style.pointerEvents = 'auto';
+        sendBtn.textContent = 'Send OTP';
+      }
+      const errorEl = document.getElementById('loginError');
+      if (errorEl) errorEl.style.display = 'none';
+    }
+
     async function sendOtp() {
+      if (otpSendInFlight) return;
+      const nowMs = Date.now();
+      if (nowMs < otpResendCooldownUntil) return;
+
       const email = normalizeEmail(document.getElementById('loginEmail').value);
       const errorEl = document.getElementById('loginError');
       if (!email) {
@@ -1233,10 +1315,21 @@
         errorEl.textContent = 'Enter valid email.';
         return;
       }
+      otpSendInFlight = true;
+      setOtpUiBusy('send', true);
       try {
         await otpRequest('sendOtp', { email, source: 'dashboard' });
         window.localStorage.setItem('emailForSignIn', email);
         document.getElementById('otpRow').style.display = 'flex';
+        updateOtpActionsVisibility();
+        // Once OTP row is open, prevent accidental re-sends for a short period.
+        otpResendCooldownUntil = Date.now() + 15000;
+        const sendBtn = document.getElementById('sendOtpBtn');
+        if (sendBtn) {
+          sendBtn.disabled = true;
+          sendBtn.style.opacity = '0.7';
+          sendBtn.textContent = 'OTP Sent';
+        }
         errorEl.style.display = 'block';
         errorEl.style.background = '#e8f5e9';
         errorEl.style.color = '#2e7d32';
@@ -1246,10 +1339,17 @@
         errorEl.style.background = '#ffebee';
         errorEl.style.color = '#c62828';
         errorEl.textContent = 'Email send failed: ' + (e.message || 'unknown');
+        // Allow retry immediately on failure.
+        otpResendCooldownUntil = 0;
+        setOtpUiBusy('send', false);
+      } finally {
+        otpSendInFlight = false;
+        updateOtpActionsVisibility();
       }
     }
 
     async function verifyOtpLogin() {
+      if (otpVerifyInFlight) return;
       const errorEl = document.getElementById('loginError');
       let email = window.localStorage.getItem('emailForSignIn') || normalizeEmail(document.getElementById('loginEmail').value);
       const otp = String(document.getElementById('loginOtp').value || '').trim();
@@ -1260,6 +1360,8 @@
         errorEl.textContent = 'OTP required.';
         return;
       }
+      otpVerifyInFlight = true;
+      setOtpUiBusy('verify', true);
       try {
         const result = await otpRequest('verifyOtp', { email, otp, source: 'dashboard' });
         window.localStorage.removeItem('emailForSignIn');
@@ -1268,6 +1370,10 @@
       } catch (e) {
         errorEl.style.display = 'block';
         errorEl.textContent = 'Login failed: ' + (e.message || 'unknown');
+      } finally {
+        otpVerifyInFlight = false;
+        setOtpUiBusy('verify', false);
+        updateOtpActionsVisibility();
       }
     }
 
