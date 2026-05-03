@@ -1377,6 +1377,11 @@
       if (!canPick) return;
 
       const cfg = APP_STATE.config || {};
+      // If config isn't ready yet (common on Netlify due to async loads), retry shortly.
+      if (!cfg.locations || Object.keys(cfg.locations).length === 0) {
+        setTimeout(() => setupNavLocationScope(), 300);
+        return;
+      }
       const all = getLocationNames(cfg).filter((l) => canViewLocation(l));
       sel.innerHTML = '';
       const optAll = document.createElement('option');
@@ -1715,6 +1720,10 @@ async function protectedExportToExcel(type) {
         migrateConfigLocations(APP_STATE.config);
         ensurePuneDefaultPlants(APP_STATE.config);
         APP_STATE.config.uiSecurity = APP_STATE.config.uiSecurity || { settingsPin: '1234', excelPin: '1234' };
+        // Refresh location/filter UI now that config is ready.
+        setupNavLocationScope();
+        ensureFiltersState();
+        populateFilterControls();
         return true;
       } catch (_) {
         return false;
@@ -1761,6 +1770,10 @@ async function protectedExportToExcel(type) {
         APP_STATE.config = bootstrap;
       }
       APP_STATE.config.uiSecurity = APP_STATE.config.uiSecurity || { settingsPin: '1234', excelPin: '1234' };
+      // Config load can complete after login UI; make sure dropdowns populate.
+      setupNavLocationScope();
+      ensureFiltersState();
+      populateFilterControls();
     }
 
     async function openSettings() {
