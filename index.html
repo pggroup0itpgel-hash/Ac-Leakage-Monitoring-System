@@ -749,9 +749,9 @@
     let sheetReportsCache = [];
     function isMobileClient() {
       const ua = navigator.userAgent || '';
-      const byUA = /Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(ua);
-      const byWidth = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
-      return byUA || byWidth;
+      const isTvUa = /SmartTV|GoogleTV|HbbTV|NetCast|Web0S|Tizen|Roku|AFT|BRAVIA|TV/i.test(ua);
+      if (isTvUa) return false;
+      return /Android.*Mobile|iPhone|iPad|iPod|Windows Phone|Mobi/i.test(ua);
     }
     function blockMobileIndexAccess() {
       document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f3f4f6;padding:20px;font-family:Segoe UI,Arial,sans-serif"><div style="max-width:420px;background:#fff;padding:20px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.12);text-align:center"><h2 style="margin:0 0 8px;color:#111827">Desktop Access Only</h2><p style="margin:0;color:#4b5563">Dashboard is available only on desktop/laptop. Please use the QR Report page on mobile.</p></div></div>';
