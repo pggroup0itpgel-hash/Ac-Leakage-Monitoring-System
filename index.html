@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>AC Leakage Monitoring Dashboard</title>
   <link rel="icon" type="image/jpeg" href="pg-logo.jpg"/>
+  <link rel="shortcut icon" type="image/jpeg" href="pg-logo.jpg"/>
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -272,6 +273,9 @@
   <div id="loginScreen" class="login-screen">
     <div class="login-container">
       <div class="login-header">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <img src="pg-logo.jpg" alt="Company Logo" onerror="this.style.display='none'" style="max-width: 150px; max-height: 80px; width: auto; height: auto; object-fit: contain;">
+        </div>
         <h1>AC Leakage Monitoring System</h1>
         <p>Login with authorized email</p>
       </div>
@@ -709,7 +713,7 @@
 
     let database = null;
     let currentData = [];
-    const SHEET_FETCH_COOLDOWN_MS = 30000;
+    const SHEET_FETCH_COOLDOWN_MS = 600000; // Increased to 10 minutes to save Netlify credits
     let lastSheetFetchAt = 0;
     let sheetFetchInFlight = null;
     let dashboardCharts = {};
