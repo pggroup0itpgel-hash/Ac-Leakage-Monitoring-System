@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QR Report - AC Leakage</title>
+    <link rel="icon" type="image/jpeg" href="pg-logo.jpg"/>
+    <link rel="shortcut icon" type="image/jpeg" href="pg-logo.jpg"/>
     
     <!-- Firebase v9 (modular SDK) -->
     <script type="module">
@@ -888,6 +890,13 @@ Copper: {
             let email = localStorage.getItem('employeeEmailForSignIn') || normalizeEmail(document.getElementById('loginEmail').value);
             if (!email) email = prompt('Please confirm your email');
             email = normalizeEmail(email);
+            
+            const verifyBtn = document.getElementById('verifyOtpBtn');
+            const originalText = verifyBtn.innerHTML;
+            verifyBtn.disabled = true;
+            verifyBtn.innerHTML = '<div class="loading"></div> Verifying...';
+            hideLoginError();
+            
             try {
                 const result = await otpRequest('verifyOtp', { email, otp, source: 'qr-report' });
                 localStorage.removeItem('employeeEmailForSignIn');
@@ -910,9 +919,12 @@ Copper: {
                     activity: 'employee_login_success',
                     source: 'qr-report'
                 });
-                hideLoginError();
+                verifyBtn.disabled = false;
+                verifyBtn.innerHTML = originalText;
                 showFormPage();
             } catch (error) {
+                verifyBtn.disabled = false;
+                verifyBtn.innerHTML = originalText;
                 showLoginError(error.message || 'Verification failed');
             }
         }
