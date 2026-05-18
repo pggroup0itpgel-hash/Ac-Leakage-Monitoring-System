@@ -29,7 +29,7 @@
     .brand-left img{height:38px;border-radius:6px;object-fit:cover}
     .brand-left h1{font-size:19px;line-height:1;color:#fff}
     .nav-buttons{display:flex;gap:8px;align-items:center}
-    .btn{background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.25);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px}
+    .btn{background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.25);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:6px;}
     .btn-excel{background:#217346;border:none;cursor:pointer}
 .btn-excel:hover{opacity:0.95}
 
@@ -60,6 +60,20 @@
     @keyframes liveBlink{
       0%,50%{opacity:1}
       51%,100%{opacity:0.3}
+    }
+
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
 
     .container{max-width:1920px;margin:0 auto;padding:0 20px;height:calc(100vh - 58px);overflow-y:auto;position:relative}
@@ -211,6 +225,10 @@
       font-weight: 700;
       cursor: pointer;
       transition: opacity 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
     .login-btn:hover {
       opacity: 0.9;
@@ -345,6 +363,10 @@
           <div class="filter-field">
             <label>Plant</label>
             <select id="fltPlant" onchange="onFilterPlantChange()"><option value="">All Plants</option></select>
+          </div>
+          <div class="filter-field">
+            <label>Product Name</label>
+            <select id="fltProduct" onchange="onFilterProductChange()"><option value="">All Products</option></select>
           </div>
           <div class="filter-field">
             <label>Line</label>
@@ -513,7 +535,16 @@
 
       <!-- Reports Table (300px height) -->
       <div class="reports-box">
-        <h3>Recent Reports (Last 50)</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <h3 style="margin-bottom:0;">Recent Reports</h3>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="reportSearch" placeholder="Search..." oninput="updateReportsTable()" style="padding:4px 8px; border:1px solid #ddd; border-radius:4px; font-size:11px; width:150px;">
+            <select id="reportLimit" onchange="updateReportsTable()" style="padding:4px 8px; border:1px solid #ddd; border-radius:4px; font-size:11px;">
+              <option value="50">Last 50 entries</option>
+              <option value="all">All entries</option>
+            </select>
+          </div>
+        </div>
         <div class="table-wrapper">
           <table>
             <thead>
@@ -1255,14 +1286,14 @@
           sendBtn.disabled = !!busy;
           sendBtn.style.opacity = busy ? '0.7' : '1';
           sendBtn.style.pointerEvents = busy ? 'none' : 'auto';
-          sendBtn.textContent = busy ? 'Sending...' : 'Send OTP';
+          sendBtn.innerHTML = busy ? '<div class="loading"></div> Sending...' : 'Send OTP';
         }
       }
       if (mode === 'verify' && verifyBtn) {
         verifyBtn.disabled = !!busy;
         verifyBtn.style.opacity = busy ? '0.7' : '1';
         verifyBtn.style.pointerEvents = busy ? 'none' : 'auto';
-        verifyBtn.textContent = busy ? 'Verifying...' : 'Verify OTP';
+        verifyBtn.innerHTML = busy ? '<div class="loading"></div> Verifying...' : 'Verify OTP';
       }
       if (resendBtn) {
         const resendBusy = otpSendInFlight || Date.now() < otpResendCooldownUntil;
@@ -1465,6 +1496,7 @@
         open: false,
         location: '',
         plant: '',
+        product: '',
         line: '',
         defectType: '',
         severity: '',
@@ -1552,6 +1584,7 @@
       const f = APP_STATE.uiFilters || {};
       const loc = canonicalLocationName(f.location);
       const plant = canonicalPlantName(f.plant);
+      const product = String(f.product || '').trim();
       const line = String(f.line || '').trim();
       const defectType = String(f.defectType || '').trim();
       const severity = String(f.severity || '').trim();
@@ -1569,6 +1602,10 @@
         if (plant) {
           const rPlant = canonicalPlantName(r.plant || '');
           if (!rPlant || rPlant !== plant) return false;
+        }
+        if (product) {
+          const rProd = String(r.type || r.productName || '').trim();
+          if (rProd !== product) return false;
         }
         if (line) {
           const rLine = String(r.line || r.productionLine || '').trim();
@@ -1600,6 +1637,7 @@
       const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
       setVal('fltLocation', f.location);
       setVal('fltPlant', f.plant);
+      setVal('fltProduct', f.product);
       setVal('fltLine', f.line);
       setVal('fltDefect', f.defectType);
       setVal('fltSeverity', f.severity);
@@ -1615,13 +1653,16 @@
     function onFilterLocationChange() {
       const locSel = document.getElementById('fltLocation');
       const plantSel = document.getElementById('fltPlant');
+      const prodSel = document.getElementById('fltProduct');
       const lineSel = document.getElementById('fltLine');
       if (plantSel) plantSel.value = '';
+      if (prodSel) prodSel.value = '';
       if (lineSel) lineSel.value = '';
       if (locSel) {
         ensureFiltersState();
         APP_STATE.uiFilters.location = locSel.value || '';
         APP_STATE.uiFilters.plant = '';
+        APP_STATE.uiFilters.product = '';
         APP_STATE.uiFilters.line = '';
       }
       populateFilterControls();
@@ -1630,11 +1671,27 @@
 
     function onFilterPlantChange() {
       const plantSel = document.getElementById('fltPlant');
+      const prodSel = document.getElementById('fltProduct');
       const lineSel = document.getElementById('fltLine');
+      if (prodSel) prodSel.value = '';
       if (lineSel) lineSel.value = '';
       if (plantSel) {
         ensureFiltersState();
         APP_STATE.uiFilters.plant = plantSel.value || '';
+        APP_STATE.uiFilters.product = '';
+        APP_STATE.uiFilters.line = '';
+      }
+      populateFilterControls();
+      scheduleRefreshUI();
+    }
+
+    function onFilterProductChange() {
+      const prodSel = document.getElementById('fltProduct');
+      const lineSel = document.getElementById('fltLine');
+      if (lineSel) lineSel.value = '';
+      if (prodSel) {
+        ensureFiltersState();
+        APP_STATE.uiFilters.product = prodSel.value || '';
         APP_STATE.uiFilters.line = '';
       }
       populateFilterControls();
@@ -1648,6 +1705,7 @@
 
       const locSel = document.getElementById('fltLocation');
       const plantSel = document.getElementById('fltPlant');
+      const prodSel = document.getElementById('fltProduct');
       const lineSel = document.getElementById('fltLine');
       const defectSel = document.getElementById('fltDefect');
       const sevSel = document.getElementById('fltSeverity');
@@ -1688,12 +1746,51 @@
         plantSel.value = f.plant || '';
       }
 
+      let products = [];
+      const scopedCatalog = {};
+      if (cfg.productCatalog) Object.assign(scopedCatalog, cfg.productCatalog);
+      if (selectedLocKey && cfg.productCatalogByLocation && cfg.productCatalogByLocation[selectedLocKey]) {
+        Object.assign(scopedCatalog, cfg.productCatalogByLocation[selectedLocKey]);
+      }
+      const dataProducts = new Set(Object.keys(scopedCatalog));
+      (currentData || []).forEach(r => {
+         const p = String(r.type || r.productName || '').trim();
+         if (p) dataProducts.add(p);
+      });
+      products = Array.from(dataProducts).sort();
+
+      if (prodSel) {
+        prodSel.innerHTML = '';
+        const ph = document.createElement('option'); ph.value = ''; ph.textContent = 'All Products'; prodSel.appendChild(ph);
+        products.forEach((p) => { const o=document.createElement('option'); o.value=p; o.textContent=p; prodSel.appendChild(o); });
+        prodSel.value = f.product || '';
+      }
+
       let lines = [];
-      if (selectedLocKey && f.plant) {
+      if (f.product && scopedCatalog[f.product] && scopedCatalog[f.product].lines) {
+        lines = scopedCatalog[f.product].lines.slice().sort();
+      } else if (f.product) {
+        const prodLines = new Set();
+        (currentData || []).forEach(r => {
+           const p = String(r.type || r.productName || '').trim();
+           if (p === f.product) {
+             const l = String(r.line || r.productionLine || '').trim();
+             if (l) prodLines.add(l);
+           }
+        });
+        lines = Array.from(prodLines).sort();
+      } else if (selectedLocKey && f.plant) {
         const plantsObj = (((cfg.locations || {})[selectedLocKey] || {}).plants) || {};
         const plantKey = Object.keys(plantsObj).find((p) => canonicalPlantName(p) === canonicalPlantName(f.plant)) || f.plant;
         const ln = (((plantsObj[plantKey] || {}).lines) || []);
         lines = ln.slice().sort();
+      } else {
+        const allLines = new Set();
+        getFilteredData().forEach(r => {
+           const l = String(r.line || r.productionLine || '').trim();
+           if (l) allLines.add(l);
+        });
+        lines = Array.from(allLines).sort();
       }
       if (lineSel) {
         lineSel.innerHTML = '';
@@ -1752,6 +1849,7 @@
       const parts = [];
       if (f.location) parts.push(`Location: <b>${f.location}</b>`);
       if (f.plant) parts.push(`Plant: <b>${f.plant}</b>`);
+      if (f.product) parts.push(`Product: <b>${f.product}</b>`);
       if (f.line) parts.push(`Line: <b>${f.line}</b>`);
       if (f.defectType) parts.push(`Defect: <b>${f.defectType}</b>`);
       if (f.severity) parts.push(`Severity: <b>${f.severity}</b>`);
@@ -1765,6 +1863,7 @@
       const getVal = (id) => { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
       APP_STATE.uiFilters.location = getVal('fltLocation');
       APP_STATE.uiFilters.plant = getVal('fltPlant');
+      APP_STATE.uiFilters.product = getVal('fltProduct');
       APP_STATE.uiFilters.line = getVal('fltLine');
       APP_STATE.uiFilters.defectType = getVal('fltDefect');
       APP_STATE.uiFilters.severity = getVal('fltSeverity');
@@ -1780,6 +1879,7 @@
       ensureFiltersState();
       APP_STATE.uiFilters.location = '';
       APP_STATE.uiFilters.plant = '';
+      APP_STATE.uiFilters.product = '';
       APP_STATE.uiFilters.line = '';
       APP_STATE.uiFilters.defectType = '';
       APP_STATE.uiFilters.severity = '';
@@ -3356,11 +3456,25 @@ function updateJointCharts() {
     }
 
     function updateReportsTable() {
-      const data = getFilteredData();
+      let data = getFilteredData();
       const tbody = document.getElementById('reportsTable');
+      if (!tbody) return;
       tbody.innerHTML = '';
       
-      const recent = data.slice(0, 50);
+      const searchInput = document.getElementById('reportSearch');
+      if (searchInput && searchInput.value) {
+        const searchVal = searchInput.value.toLowerCase();
+        data = data.filter(item => {
+          return Object.values(item).some(val => 
+            String(val).toLowerCase().includes(searchVal)
+          );
+        });
+      }
+
+      const limitInput = document.getElementById('reportLimit');
+      const limitVal = limitInput ? limitInput.value : '50';
+      const recent = limitVal === 'all' ? data : data.slice(0, 50);
+
       recent.forEach(item => {
         const row = tbody.insertRow();
         const ts = toDate(item.timestamp);
