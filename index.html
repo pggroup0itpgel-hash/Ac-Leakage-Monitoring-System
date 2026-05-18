@@ -1749,8 +1749,11 @@
       let products = [];
       const scopedCatalog = {};
       if (cfg.productCatalog) Object.assign(scopedCatalog, cfg.productCatalog);
-      if (selectedLocKey && cfg.productCatalogByLocation && cfg.productCatalogByLocation[selectedLocKey]) {
-        Object.assign(scopedCatalog, cfg.productCatalogByLocation[selectedLocKey]);
+      
+      if (cfg.productCatalogByLocation) {
+        Object.keys(cfg.productCatalogByLocation).forEach(loc => {
+          Object.assign(scopedCatalog, cfg.productCatalogByLocation[loc]);
+        });
       }
       const dataProducts = new Set(Object.keys(scopedCatalog));
       (currentData || []).forEach(r => {
