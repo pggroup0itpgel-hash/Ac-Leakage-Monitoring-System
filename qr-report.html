@@ -1597,21 +1597,30 @@ Copper: {
            
                 console.log('Submitting form data:', formData);
                 
-                if (selectedLocation === 'Pune') {
-                    if (firebaseReady && window.firebaseDatabase) {
+                if (selectedLocation === 'Pune' && (!firebaseReady || !window.firebaseDatabase)) {
+                    throw new Error('Firebase is not ready for Pune submissions.');
+                }
+                for (let i = 0; i < quantityVal; i++) {
+                    const entryData = {
+                        ...formData,
+                        timestamp: new Date().toISOString()
+                    };
+                    if (selectedLocation === 'Pune') {
                         const reportsRef = window.dbRef(window.firebaseDatabase, `leakageReportsByPlant/${selectedPlant}`);
-                        await window.dbPush(reportsRef, formData);
-                        console.log('Data saved to Firebase successfully for Pune');
+                        await window.dbPush(reportsRef, entryData);
                     }
-                } else {
                     syncToSheet('syncDefectReport', {
-                        report: formData,
+                        report: entryData,
                         scope: {
                             plant: selectedPlant,
                             location: selectedLocation
                         }
                     });
-                    console.log('Data synced to Google Sheet for non-Pune location');
+                }
+                if (selectedLocation === 'Pune') {
+                    console.log(`Submitted ${quantityVal} entries to Pune Firebase and Google Sheet`);
+                } else {
+                    console.log(`Submitted ${quantityVal} entries to Google Sheet`);
                 }
                 syncToSheet('logActivity', {
                     email: currentUser.email,
