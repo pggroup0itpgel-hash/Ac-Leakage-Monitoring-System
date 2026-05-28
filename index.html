@@ -1632,6 +1632,16 @@
       });
     }
 
+    function reportQuantity(item) {
+      const qty = Number(item && item.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) return 1;
+      return qty;
+    }
+
+    function sumQuantities(items) {
+      return (items || []).reduce((sum, item) => sum + reportQuantity(item), 0);
+    }
+
     function syncFilterUIFromState() {
       ensureFiltersState();
       const f = APP_STATE.uiFilters;
@@ -2846,10 +2856,10 @@ function updateStats() {
       // Calculate Today's
       const todayStart = new Date(); 
       todayStart.setHours(0,0,0,0);
-      const todayCount = data.filter(d => {
+      const todayCount = sumQuantities(data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= todayStart;
-      }).length;
+      }));
       
 // Calculate Last Working Day (yesterday) - PLANT WISE
       const yesterdayStart = new Date(todayStart);
@@ -2861,13 +2871,13 @@ function updateStats() {
         return ts && ts >= yesterdayStart && ts < yesterdayEnd;
       });
       
-      const lastWorkingDayCount = yesterdayData.length;
+      const lastWorkingDayCount = sumQuantities(yesterdayData);
       const pairCounts = {};
       yesterdayData.forEach((d) => {
         const plant = canonicalPlantName(d.plant || '') || 'Unknown';
         const location = canonicalLocationName(d.location || 'Pune') || 'pune';
         const key = `${location}||${plant}`;
-        pairCounts[key] = (pairCounts[key] || 0) + 1;
+        pairCounts[key] = (pairCounts[key] || 0) + reportQuantity(d);
       });
       const cfgLocs = (APP_STATE.config && APP_STATE.config.locations) || {};
       const cfgPlants = (APP_STATE.config && APP_STATE.config.plants) || {};
@@ -2993,10 +3003,10 @@ function updateStats() {
       const currentMonth = new Date(anchor);
       currentMonth.setDate(1);
       currentMonth.setHours(0,0,0,0);
-      const thisMonthCount = data.filter(d => {
+      const thisMonthCount = sumQuantities(data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= currentMonth;
-      }).length;
+      }));
       
       // Calculate Avg Daily
       const dayOfMonth = (anchor && anchor instanceof Date) ? anchor.getDate() : now.getDate();
@@ -3008,10 +3018,10 @@ function updateStats() {
       const lastMonthEnd = new Date(currentMonth);
       lastMonthEnd.setDate(0);
       lastMonthEnd.setHours(23,59,59,999);
-      const lastMonthCount = data.filter(d => {
+      const lastMonthCount = sumQuantities(data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= lastMonth && ts <= lastMonthEnd;
-      }).length;
+      }));
       
       // Calculate M-o-M
       let momChange = 0;
@@ -3023,10 +3033,10 @@ function updateStats() {
       
 // Calculate Running Year (Aug'25 to Date)
       const runningYearStart = new Date('2025-08-01T00:00:00');
-      const runningYearTotal = data.filter(d => {
+      const runningYearTotal = sumQuantities(data.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= runningYearStart;
-      }).length;
+      }));
       
       // Update UI - ONLY elements that exist
       document.getElementById('todayLeakages').textContent = todayCount;
@@ -3051,10 +3061,10 @@ function updateStats() {
         const dayEnd = new Date(day);
         dayEnd.setDate(dayEnd.getDate() + 1);
         
-        return data.filter(item => {
+        return sumQuantities(data.filter(item => {
           const ts = toDate(item.timestamp);
           return ts && ts >= dayStart && ts < dayEnd;
-        }).length;
+        }));
       });
 
       // Calculate max value and set Y-axis scale with 15% margin
@@ -3072,7 +3082,7 @@ function updateStats() {
       const counts = {};
       data.forEach(d => {
         const p = d.plant || 'Unknown';
-        counts[p] = (counts[p] || 0) + 1;
+        counts[p] = (counts[p] || 0) + reportQuantity(d);
       });
       
       const labels = Object.keys(counts).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
@@ -3088,7 +3098,7 @@ function updateStats() {
       const counts = {};
       data.forEach(d => {
         const defect = d.defectType || 'Unknown';
-        counts[defect] = (counts[defect] || 0) + 1;
+        counts[defect] = (counts[defect] || 0) + reportQuantity(d);
       });
       
       const labels = Object.keys(counts);
@@ -3104,7 +3114,7 @@ function updateStats() {
       const counts = {};
       data.forEach(d => {
         const shift = d.shift || 'Unknown';
-        counts[shift] = (counts[shift] || 0) + 1;
+        counts[shift] = (counts[shift] || 0) + reportQuantity(d);
       });
       
       const labels = Object.keys(counts);
@@ -3120,7 +3130,7 @@ function updateStats() {
       const counts = {};
       data.forEach(d => {
         const action = d.action || 'Unknown';
-        counts[action] = (counts[action] || 0) + 1;
+        counts[action] = (counts[action] || 0) + reportQuantity(d);
       });
       
       const labels = Object.keys(counts);
@@ -3136,7 +3146,7 @@ function updateStats() {
       const counts = {};
       data.filter(d => d.type === unitType).forEach(d => {
         const j = d.joint || 'Unknown';
-        counts[j] = (counts[j] || 0) + 1;
+        counts[j] = (counts[j] || 0) + reportQuantity(d);
       });
       
       const sorted = Object.entries(counts)
@@ -3193,7 +3203,7 @@ function updateJointCharts() {
     filtered.forEach(d => {
       const joint = d.joint || d.jointNo || d.joint_no || d.jointNumber || 
                     d.location || d.area || d.position || 'Unknown';
-      counts[joint] = (counts[joint] || 0) + 1;
+      counts[joint] = (counts[joint] || 0) + reportQuantity(d);
     });
     
     const sorted = Object.entries(counts)
@@ -3259,12 +3269,12 @@ function updateJointCharts() {
         }
         
         const monthLabel = labels[index];
-        const count = data.filter(item => {
+        const count = sumQuantities(data.filter(item => {
           const ts = toDate(item.timestamp);
           if (!ts) return false;
           const inRange = ts >= monthStart && ts <= monthEnd;
           return inRange;
-        }).length;
+        }));
         return count;
       });
 
@@ -3286,7 +3296,7 @@ function updateJointCharts() {
       const counts = {};
       recentData.forEach(d => {
         const key = d.defectType || 'Unknown';
-        counts[key] = (counts[key] || 0) + 1;
+        counts[key] = (counts[key] || 0) + reportQuantity(d);
       });
 
       const sorted = Object.entries(counts)
@@ -3310,7 +3320,7 @@ function updateJointCharts() {
       const counts = {};
       data.forEach(d => {
         const line = d.productionLine || 'Unknown';
-        counts[line] = (counts[line] || 0) + 1;
+        counts[line] = (counts[line] || 0) + reportQuantity(d);
       });
 
       const sorted = Object.entries(counts)
@@ -3351,10 +3361,10 @@ function updateJointCharts() {
             monthEnd.setHours(0, 0, 0, 0);
           }
           
-          return data.filter(item => {
+          return sumQuantities(data.filter(item => {
             const ts = toDate(item.timestamp);
             return ts && ts >= monthStart && ts <= monthEnd && (item.plant || 'Unknown') === plant;
-          }).length;
+          }));
         });
 
         return {
@@ -3414,18 +3424,19 @@ function updateJointCharts() {
           operatorData[key] = { operator: op, plant: plant, total: 0, last2Months: 0, months: [0, 0, 0, 0, 0, 0] };
         }
         
-        operatorData[key].total++;
+        const qty = reportQuantity(d);
+        operatorData[key].total += qty;
         
         // Check which month this entry belongs to
         const ts = toDate(d.timestamp);
         if (ts) {
           for (let i = 0; i < 6; i++) {
             if (ts >= months[i].start && ts <= months[i].end) {
-              operatorData[key].months[i]++;
+              operatorData[key].months[i] += qty;
               
 // Add to last 2 months count (months 0, 1)
               if (i < 2) {
-                operatorData[key].last2Months++;
+                operatorData[key].last2Months += qty;
               }
               break;
             }
@@ -3542,13 +3553,13 @@ function exportLastMonthToExcel() {
       XLSX.utils.book_append_sheet(wb, ws, lastMonthName + ' Reports');
       
       const summary = [
-        { Metric: 'Total Leakages', Value: lastMonthData.length },
-        { Metric: 'Critical Issues', Value: lastMonthData.filter(d => d.severity === 'Critical').length },
-        { Metric: 'Major Issues', Value: lastMonthData.filter(d => d.severity === 'Major').length },
-        { Metric: 'Minor Issues', Value: lastMonthData.filter(d => d.severity === 'Minor').length },
-        { Metric: 'Rework Count', Value: lastMonthData.filter(d => d.action === 'Rework').length },
-        { Metric: 'Scrap Count', Value: lastMonthData.filter(d => d.action === 'Scrap').length },
-        { Metric: 'Accepted Count', Value: lastMonthData.filter(d => d.action === 'Accepted').length }
+        { Metric: 'Total Leakages', Value: sumQuantities(lastMonthData) },
+        { Metric: 'Critical Issues', Value: sumQuantities(lastMonthData.filter(d => d.severity === 'Critical')) },
+        { Metric: 'Major Issues', Value: sumQuantities(lastMonthData.filter(d => d.severity === 'Major')) },
+        { Metric: 'Minor Issues', Value: sumQuantities(lastMonthData.filter(d => d.severity === 'Minor')) },
+        { Metric: 'Rework Count', Value: sumQuantities(lastMonthData.filter(d => d.action === 'Rework')) },
+        { Metric: 'Scrap Count', Value: sumQuantities(lastMonthData.filter(d => d.action === 'Scrap')) },
+        { Metric: 'Accepted Count', Value: sumQuantities(lastMonthData.filter(d => d.action === 'Accepted')) }
       ];
       
       const ws2 = XLSX.utils.json_to_sheet(summary);
@@ -3583,13 +3594,13 @@ function exportLastMonthToExcel() {
       XLSX.utils.book_append_sheet(wb, ws, 'Leakage Reports');
       
       const summary = [
-        { Metric: 'Total Leakages', Value: currentData.length },
-        { Metric: 'Critical Issues', Value: currentData.filter(d => d.severity === 'Critical').length },
-        { Metric: 'Major Issues', Value: currentData.filter(d => d.severity === 'Major').length },
-        { Metric: 'Minor Issues', Value: currentData.filter(d => d.severity === 'Minor').length },
-        { Metric: 'Rework Count', Value: currentData.filter(d => d.action === 'Rework').length },
-        { Metric: 'Scrap Count', Value: currentData.filter(d => d.action === 'Scrap').length },
-        { Metric: 'Accepted Count', Value: currentData.filter(d => d.action === 'Accepted').length }
+        { Metric: 'Total Leakages', Value: sumQuantities(currentData) },
+        { Metric: 'Critical Issues', Value: sumQuantities(currentData.filter(d => d.severity === 'Critical')) },
+        { Metric: 'Major Issues', Value: sumQuantities(currentData.filter(d => d.severity === 'Major')) },
+        { Metric: 'Minor Issues', Value: sumQuantities(currentData.filter(d => d.severity === 'Minor')) },
+        { Metric: 'Rework Count', Value: sumQuantities(currentData.filter(d => d.action === 'Rework')) },
+        { Metric: 'Scrap Count', Value: sumQuantities(currentData.filter(d => d.action === 'Scrap')) },
+        { Metric: 'Accepted Count', Value: sumQuantities(currentData.filter(d => d.action === 'Accepted')) }
       ];
       
       const ws2 = XLSX.utils.json_to_sheet(summary);
