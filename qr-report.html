@@ -472,6 +472,36 @@
                 
                 <div class="form-grid">
                     <div class="form-group">
+                        <label>Location *</label>
+                        <select id="location" required>
+                            <option value="">Select Location</option>
+                        </select>
+                        <input type="hidden" id="locationLockedVal" value="">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Plant *</label>
+                        <select id="plant" required>
+                            <option value="">Select Plant</option>
+                        </select>
+                        <input type="hidden" id="plantLockedVal" value="">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Shift *</label>
+                        <select id="shift" required>
+                            <option value="">Select Shift</option>
+                            <option value="Day">Day Shift</option>
+                            <option value="Night">Night Shift</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Operator Name *</label>
+                        <input type="text" id="operatorName" placeholder="Enter operator name" required>
+                    </div>
+
+                    <div class="form-group">
                         <label>Product Name *</label>
                         <select id="unitType" onchange="updateOptions()" required>
                             <option value="">Select Product Name</option>
@@ -482,63 +512,35 @@
                             <option value="Copper">Copper</option>
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label>Production Line *</label>
                         <select id="productionLine" required>
                             <option value="">First select Product Name</option>
                         </select>
                     </div>
-                    
-                    <div class="form-group">
-                        <label>Location *</label>
-                        <select id="location" required>
-                            <option value="">Select Location</option>
-                        </select>
-                        <input type="hidden" id="locationLockedVal" value="">
-                    </div>
-                    <div class="form-group">
-                        <label>Plant *</label>
-                        <select id="plant" required>
-                            <option value="">Select Plant</option>
-                        </select>
-                        <input type="hidden" id="plantLockedVal" value="">
-                    </div>
-                    
+
                     <div class="form-group">
                         <label>Defect Type *</label>
                         <select id="defectType" required>
                             <option value="">Select Defect Type</option>
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
-                        <label>Operator Name *</label>
-                        <input type="text" id="operatorName" placeholder="Enter operator name" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Shift *</label>
-                        <select id="shift" required>
-                            <option value="">Select Shift</option>
-                            <option value="Day">Day Shift</option>
-                            <option value="Night">Night Shift</option>
+                        <label>Detection Stage *</label>
+                        <select id="detectionStage" required>
+                            <option value="">Select Detection Stage</option>
+                            <option value="N2">N2</option>
+                            <option value="HLD1">HLD1</option>
+                            <option value="HLD2">HLD2</option>
+                            <option value="VLT">VLT</option>
+                            <option value="WLT">WLT</option>
+                            <option value="WLT Visual Insp.">WLT Visual Insp.</option>
+                            <option value="Smog Test">Smog Test</option>
                         </select>
                     </div>
-                    
-<div class="form-group">
-    <label>Detection Stage *</label>
-    <select id="detectionStage" required>
-        <option value="">Select Detection Stage</option>
-        <option value="N2">N2</option>
-        <option value="HLD1">HLD1</option>
-        <option value="HLD2">HLD2</option>
-        <option value="VLT">VLT</option>
-        <option value="WLT">WLT</option>
-        <option value="WLT Visual Insp.">WLT Visual Insp.</option>
-        <option value="Smog Test">Smog Test</option>
-    </select>
-</div>                    
+
                     <div class="form-group">
                         <label>Severity Level *</label>
                         <select id="severity" required>
@@ -547,13 +549,25 @@
                             <option value="Critical">Critical</option>
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label>Action Taken *</label>
                         <select id="actionTaken" required>
                             <option value="">Select Action</option>
                             <option value="Rework">Rework</option>
                             <option value="Scrap">Scrap</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Quantity *</label>
+                        <select id="quantity" required>
+                            <option value="">Select Quantity (1–5)</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
                         </select>
                     </div>
                 </div>
@@ -1552,6 +1566,10 @@ Copper: {
                 if (!selectedPlant || !selectedLocation) {
                     throw new Error('Plant and location are required.');
                 }
+                const quantityVal = Number(document.getElementById('quantity').value);
+                if (!Number.isInteger(quantityVal) || quantityVal < 1 || quantityVal > 5) {
+                    throw new Error('Quantity must be a whole number from 1 to 5.');
+                }
                 const formData = {
                     timestamp: now.toISOString(),
                     type: document.getElementById("unitType").value,  // Product Name (maintains 'type' field for compatibility)
@@ -1566,6 +1584,7 @@ Copper: {
                     severity: document.getElementById("severity").value,
                     shift: document.getElementById("shift").value,
                     action: document.getElementById("actionTaken").value,
+                    quantity: quantityVal,
                     operatorName: document.getElementById("operatorName").value,
                     remarks: document.getElementById("remarks").value || '',
                     reportedBy: `${currentUser.name} (${currentUser.email})`,
