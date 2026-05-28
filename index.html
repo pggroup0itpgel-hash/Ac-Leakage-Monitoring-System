@@ -558,6 +558,7 @@
                 <th>Severity</th>
                 <th>Shift</th>
                 <th>Action</th>
+                <th>Qty</th>
                 <th>Operator</th>
               </tr>
             </thead>
@@ -3481,6 +3482,7 @@ function updateJointCharts() {
       recent.forEach(item => {
         const row = tbody.insertRow();
         const ts = toDate(item.timestamp);
+        const qty = Number(item.quantity);
         row.innerHTML = `
           <td>${ts ? ts.toLocaleString() : ''}</td>
           <td>${item.type || ''}</td>
@@ -3491,6 +3493,7 @@ function updateJointCharts() {
           <td><span class="severity-badge severity-${(item.severity || '').toLowerCase()}">${item.severity || ''}</span></td>
           <td>${item.shift || ''}</td>
           <td>${item.action || ''}</td>
+          <td>${Number.isFinite(qty) && qty > 0 ? qty : 1}</td>
           <td>${item.operatorName || ''}</td>
         `;
       });
@@ -3516,6 +3519,7 @@ function exportLastMonthToExcel() {
       
       const data = lastMonthData.map(item => {
         const ts = toDate(item.timestamp);
+        const qty = Number(item.quantity);
         return {
           'Timestamp': ts ? ts.toLocaleString() : '',
           'Unit Type': item.type || '',
@@ -3526,6 +3530,7 @@ function exportLastMonthToExcel() {
           'Severity': item.severity || '',
           'Shift': item.shift || '',
           'Action Taken': item.action || '',
+          'Quantity': Number.isFinite(qty) && qty > 0 ? qty : 1,
           'Operator': item.operatorName || '',
           'Remarks': item.remarks || '',
           'Reported By': item.reportedBy || ''
@@ -3555,6 +3560,7 @@ function exportLastMonthToExcel() {
     function exportToExcel() {
       const data = currentData.map(item => {
         const ts = toDate(item.timestamp);
+        const qty = Number(item.quantity);
         return {
           'Timestamp': ts ? ts.toLocaleString() : '',
           'Unit Type': item.type || '',
@@ -3565,6 +3571,7 @@ function exportLastMonthToExcel() {
           'Severity': item.severity || '',
           'Shift': item.shift || '',
           'Action Taken': item.action || '',
+          'Quantity': Number.isFinite(qty) && qty > 0 ? qty : 1,
           'Operator': item.operatorName || '',
           'Remarks': item.remarks || '',
           'Reported By': item.reportedBy || ''
