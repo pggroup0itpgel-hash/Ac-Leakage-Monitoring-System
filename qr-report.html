@@ -1597,31 +1597,21 @@ Copper: {
            
                 console.log('Submitting form data:', formData);
                 
-                if (selectedLocation === 'Pune' && (!firebaseReady || !window.firebaseDatabase)) {
-                    throw new Error('Firebase is not ready for Pune submissions.');
-                }
-                for (let i = 0; i < quantityVal; i++) {
-                    const entryData = {
-                        ...formData,
-                        timestamp: new Date().toISOString()
-                    };
-                    if (selectedLocation === 'Pune') {
-                        const reportsRef = window.dbRef(window.firebaseDatabase, `leakageReportsByPlant/${selectedPlant}`);
-                        await window.dbPush(reportsRef, entryData);
-                    }
-                    syncToSheet('syncDefectReport', {
-                        report: entryData,
-                        scope: {
-                            plant: selectedPlant,
-                            location: selectedLocation
-                        }
-                    });
-                }
                 if (selectedLocation === 'Pune') {
-                    console.log(`Submitted ${quantityVal} entries to Pune Firebase and Google Sheet`);
-                } else {
-                    console.log(`Submitted ${quantityVal} entries to Google Sheet`);
+                    if (!firebaseReady || !window.firebaseDatabase) {
+                        throw new Error('Firebase is not ready for Pune submissions.');
+                    }
+                    const reportsRef = window.dbRef(window.firebaseDatabase, `leakageReportsByPlant/${selectedPlant}`);
+                    await window.dbPush(reportsRef, formData);
                 }
+                syncToSheet('syncDefectReport', {
+                    report: formData,
+                    scope: {
+                        plant: selectedPlant,
+                        location: selectedLocation
+                    }
+                });
+                console.log(`Submitted single entry with quantity ${quantityVal}`);
                 syncToSheet('logActivity', {
                     email: currentUser.email,
                     role: currentUserProfile?.role || 'employee',
