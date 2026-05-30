@@ -1597,20 +1597,23 @@ Copper: {
            
                 console.log('Submitting form data:', formData);
                 
-                if (selectedLocation === 'Pune') {
+                const isPune = String(selectedLocation || '').trim().toLowerCase() === 'pune';
+                if (isPune) {
                     if (!firebaseReady || !window.firebaseDatabase) {
                         throw new Error('Firebase is not ready for Pune submissions.');
                     }
                     const reportsRef = window.dbRef(window.firebaseDatabase, `leakageReportsByPlant/${selectedPlant}`);
                     await window.dbPush(reportsRef, formData);
+                } else {
+                    // Non-Pune locations use Google Sheet as the source of truth.
+                    syncToSheet('syncDefectReport', {
+                        report: formData,
+                        scope: {
+                            plant: selectedPlant,
+                            location: selectedLocation
+                        }
+                    });
                 }
-                syncToSheet('syncDefectReport', {
-                    report: formData,
-                    scope: {
-                        plant: selectedPlant,
-                        location: selectedLocation
-                    }
-                });
                 console.log(`Submitted single entry with quantity ${quantityVal}`);
                 syncToSheet('logActivity', {
                     email: currentUser.email,
