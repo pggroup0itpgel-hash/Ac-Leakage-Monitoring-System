@@ -3661,10 +3661,12 @@ function exportLastMonthToExcel() {
         });
       });
       sheetReportsCache.forEach((r, idx) => {
+        // Pune is served from Firebase; including sheet rows duplicates dashboard counts.
+        if (canonicalLocationName(r.location || 'Pune') === 'pune') return;
         data.push({
           ...r,
           id: r.id || `sheet_${idx}_${r.timestamp || ''}`,
-          location: r.location || 'Pune',
+          location: r.location || '',
           plant: canonicalPlantName(r.plant || '')
         });
       });
