@@ -966,6 +966,7 @@ function getMonthlyReportSettings_(payload) {
     enabled: true,
     defaultTo: DEFAULT_OTP_SENDER_EMAIL,
     defaultCc: '',
+    locationRoutes: {},
     plantRoutes: {},
     sendDayOfMonth: 1,
     sendHour: 8
@@ -981,6 +982,14 @@ function getMonthlyReportSettings_(payload) {
     else if (key === 'defaultCc') settings.defaultCc = val;
     else if (key === 'sendDayOfMonth') settings.sendDayOfMonth = Number(val) || 1;
     else if (key === 'sendHour') settings.sendHour = Number(val) || 8;
+    else if (key.indexOf('loc_') === 0) {
+      const locName = key.substring(4);
+      try {
+        settings.locationRoutes[locName] = JSON.parse(val);
+      } catch (_) {
+        settings.locationRoutes[locName] = { to: val, cc: '' };
+      }
+    }
     else if (key.indexOf('plant_') === 0) {
       const plantName = key.substring(6);
       try {
@@ -1005,6 +1014,12 @@ function saveMonthlyReportSettings_(payload) {
   sh.appendRow(['sendDayOfMonth', String(settings.sendDayOfMonth || 1), new Date()]);
   sh.appendRow(['sendHour', String(settings.sendHour || 8), new Date()]);
 
+  const locRoutes = settings.locationRoutes || {};
+  Object.keys(locRoutes).forEach(function(loc) {
+    const r = locRoutes[loc] || {};
+    sh.appendRow(['loc_' + loc, JSON.stringify(r), new Date()]);
+  });
+
   const routes = settings.plantRoutes || {};
   Object.keys(routes).forEach(function(plant) {
     const r = routes[plant] || {};
@@ -1016,13 +1031,20 @@ function saveMonthlyReportSettings_(payload) {
     role: 'it_admin',
     activity: 'monthly_report_settings_saved',
     source: 'code.gs',
-    meta: { enabled: settings.enabled, plantsConfigured: Object.keys(routes).length }
+    meta: {
+      enabled: settings.enabled,
+      locationsConfigured: Object.keys(locRoutes).length,
+      plantsConfigured: Object.keys(routes).length
+    }
   });
 
   return { saved: true, settings: settings };
 }
 
-function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
+function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, totalLeaks) {
+  locationName = String(locationName || '').trim();
+  plantName = String(plantName || '').trim() || 'All Plants';
+
   let criticalCount = 0;
   let majorCount = 0;
   let minorCount = 0;
@@ -1173,6 +1195,7 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
   }
 
   const generatedDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata', 'dd MMM yyyy, hh:mm a');
+  const locBadge = locationName ? ('<span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">LOCATION:</b> ' + locationName + '</span>') : '';
 
   return [
     '<!DOCTYPE html>',
@@ -1190,6 +1213,7 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
     '              <div style="font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">PG ELECTROPLAST LIMITED</div>',
     '              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">Monthly AC Leakage Quality Report</h1>',
     '              <div style="display:block;margin-top:10px;">',
+    '                ' + locBadge,
     '                <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">PLANT:</b> ' + plantName + '</span>',
     '                <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ' + monthLabel + '</span>',
     '              </div>',
@@ -1203,7 +1227,7 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
     '              <!-- Executive Summary Callout -->',
     '              <div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:22px;">',
     '                <p style="margin:0;font-size:13px;color:#334155;line-height:1.6;">',
-    '                  Performance overview for <b>' + plantName + '</b> during <b>' + monthLabel + '</b>. Total of <b>' + totalLeaks + '</b> leakage defect(s) logged across all production lines and shifts.',
+    '                  Performance overview for <b>' + plantName + (locationName ? ' (' + locationName + ')' : '') + '</b> during <b>' + monthLabel + '</b>. Total of <b>' + totalLeaks + '</b> leakage defect(s) logged across all production lines and shifts.',
     '                </p>',
     '              </div>',
     '              ',
@@ -1389,40 +1413,69 @@ function sendMonthlyPlantLeakageReports(options) {
     return dt >= startDate && dt <= endDate;
   });
 
-  // Group by plant
+  // Group by plant and capture location
   const plantGroups = {};
+  const plantLocations = {};
+
   monthRecords.forEach(function(r) {
     const p = String(r.plant || 'PGTL').trim();
+    const loc = String(r.location || 'Pune').trim();
     if (!plantGroups[p]) plantGroups[p] = [];
     plantGroups[p].push(r);
+    if (!plantLocations[p]) plantLocations[p] = loc;
   });
 
   // Ensure configured plants appear even if 0 leaks
   const plantRoutes = settings.plantRoutes || {};
+  const locationRoutes = settings.locationRoutes || {};
+
   Object.keys(plantRoutes).forEach(function(p) {
     if (!plantGroups[p]) plantGroups[p] = [];
+    if (!plantLocations[p]) plantLocations[p] = 'Pune';
   });
   if (Object.keys(plantGroups).length === 0) {
     plantGroups['PGTL'] = [];
+    plantLocations['PGTL'] = 'Pune';
   }
 
+  const targetLocationFilter = options.location ? String(options.location).trim() : '';
   const targetPlantFilter = options.plant ? String(options.plant).trim() : '';
   const emailResults = [];
 
   Object.keys(plantGroups).forEach(function(plant) {
-    if (targetPlantFilter && targetPlantFilter !== '*' && targetPlantFilter !== plant) {
+    const location = plantLocations[plant] || 'Pune';
+
+    if (targetLocationFilter && targetLocationFilter !== '*' && targetLocationFilter.toLowerCase() !== location.toLowerCase()) {
+      return;
+    }
+    if (targetPlantFilter && targetPlantFilter !== '*' && targetPlantFilter.toLowerCase() !== plant.toLowerCase()) {
       return;
     }
 
     const recs = plantGroups[plant] || [];
-    let toEmails = options.testEmail || (plantRoutes[plant] && plantRoutes[plant].to) || settings.defaultTo || DEFAULT_OTP_SENDER_EMAIL;
-    let ccEmails = (options.testEmail ? (options.testCc || '') : '') || (plantRoutes[plant] && plantRoutes[plant].cc) || settings.defaultCc || '';
+
+    // Hierarchical email resolution:
+    // 1. Specific test override
+    // 2. Specific Plant route (e.g. PGTL)
+    // 3. Location-level route (e.g. Pune - maps all plants in Pune)
+    // 4. Global default
+    let toEmails = options.testEmail ||
+      (plantRoutes[plant] && plantRoutes[plant].to) ||
+      (locationRoutes[location] && locationRoutes[location].to) ||
+      settings.defaultTo ||
+      DEFAULT_OTP_SENDER_EMAIL;
+
+    let ccEmails = (options.testEmail ? (options.testCc || '') : '') ||
+      (plantRoutes[plant] && plantRoutes[plant].cc) ||
+      (locationRoutes[location] && locationRoutes[location].cc) ||
+      settings.defaultCc ||
+      '';
 
     const toList = normalizeEmailList_(toEmails);
     const ccList = normalizeEmailList_(ccEmails);
 
     if (!toList.length) {
-      emailResults.push({ plant: plant, status: 'skipped', reason: 'No recipient email configured' });
+      emailResults.push({ plant: plant, location: location, status: 'skipped', reason: 'No recipient email configured' });
       return;
     }
 
@@ -1432,13 +1485,14 @@ function sendMonthlyPlantLeakageReports(options) {
       totalLeaks += q;
     });
 
-    const htmlBody = buildMonthlyReportHtml_(plant, monthLabel, recs, totalLeaks);
-    const subject = 'AC Leakage Performance Report — ' + plant + ' (' + monthLabel + ')';
+    const htmlBody = buildMonthlyReportHtml_(plant, location, monthLabel, recs, totalLeaks);
+    const subject = 'AC Leakage Performance Report — ' + plant + ' (' + location + ') [' + monthLabel + ']';
 
     try {
       sendSystemEmail_(toList, ccList, subject, htmlBody);
       emailResults.push({
         plant: plant,
+        location: location,
         to: toList.join(', '),
         cc: ccList.join(', '),
         totalLeaks: totalLeaks,
@@ -1446,7 +1500,7 @@ function sendMonthlyPlantLeakageReports(options) {
       });
       logEmailActivity_({
         type: options.testEmail ? 'test_report' : 'monthly_report',
-        plant: plant,
+        plant: plant + ' (' + location + ')',
         month: monthLabel,
         to: toList.join(', '),
         cc: ccList.join(', '),
@@ -1460,6 +1514,7 @@ function sendMonthlyPlantLeakageReports(options) {
       const errMsg = sendErr.message || String(sendErr);
       emailResults.push({
         plant: plant,
+        location: location,
         to: toList.join(', '),
         cc: ccList.join(', '),
         status: 'error',
@@ -1467,7 +1522,7 @@ function sendMonthlyPlantLeakageReports(options) {
       });
       logEmailActivity_({
         type: options.testEmail ? 'test_report' : 'monthly_report',
-        plant: plant,
+        plant: plant + ' (' + location + ')',
         month: monthLabel,
         to: toList.join(', '),
         cc: ccList.join(', '),
@@ -1508,6 +1563,7 @@ function previewMonthlyReport_(payload) {
   const monthLabel = monthNames[targetMonth - 1] + ' ' + targetYear;
 
   const rawReports = getDefectReports_({ limit: 5000 }).reports || [];
+  const locationName = String(payload.location || '').trim();
   const plantName = String(payload.plant || 'PGTL').trim() || 'PGTL';
 
   const plantRecords = rawReports.filter(function(r) {
@@ -1515,6 +1571,7 @@ function previewMonthlyReport_(payload) {
     const dt = new Date(r.timestamp);
     const inDate = dt >= startDate && dt <= endDate;
     if (!inDate) return false;
+    if (locationName && locationName !== '*' && String(r.location || '').toLowerCase() !== locationName.toLowerCase()) return false;
     if (plantName !== '*' && plantName && String(r.plant || '').toLowerCase() !== plantName.toLowerCase()) return false;
     return true;
   });
@@ -1525,12 +1582,19 @@ function previewMonthlyReport_(payload) {
     totalLeaks += q;
   });
 
-  const html = buildMonthlyReportHtml_(plantName === '*' ? 'All Plants' : plantName, monthLabel, plantRecords, totalLeaks);
+  const html = buildMonthlyReportHtml_(
+    plantName === '*' ? 'All Plants' : plantName,
+    locationName === '*' ? 'All Locations' : (locationName || 'Pune'),
+    monthLabel,
+    plantRecords,
+    totalLeaks
+  );
 
   return {
     ok: true,
     html: html,
     plant: plantName,
+    location: locationName || 'Pune',
     month: monthLabel,
     totalLeaks: totalLeaks,
     recordsCount: plantRecords.length

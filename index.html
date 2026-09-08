@@ -732,31 +732,35 @@
           </div>
 
           <div class="settings-block" style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:16px">
-            <h5 style="margin:0 0 8px 0;font-size:13px;color:#334155">🏢 Plant-wise Custom Routing (Optional Overrides)</h5>
-            <p class="muted" style="margin-bottom:8px">Configure distinct To and CC recipients for individual plants (e.g. PGTL, Plant-2, NGM).</p>
-            <div class="row" style="grid-template-columns:140px 1fr 1fr auto;gap:8px;align-items:end">
+            <h5 style="margin:0 0 8px 0;font-size:13px;color:#334155">🏢 Location &amp; Plant-wise Custom Routing (Overrides &amp; Grouping)</h5>
+            <p class="muted" style="margin-bottom:8px">Map email recipients for an entire location (e.g. Pune, Supa) or specify individual plant overrides (e.g. PGTL, Plant-2).</p>
+            <div class="row" style="grid-template-columns:130px 140px 1fr 1fr auto;gap:8px;align-items:end">
               <div>
-                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Plant:</label>
-                <select id="monthlyPlantPick"><option value="">Select Plant</option></select>
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Location:</label>
+                <select id="monthlyRouteLocation" onchange="syncMonthlyRoutePlantDropdown()"><option value="*">All Locations</option></select>
               </div>
               <div>
-                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Plant To Email(s):</label>
-                <input id="monthlyPlantTo" type="text" placeholder="e.g. pgtl.head@pgel.in">
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Plant Target:</label>
+                <select id="monthlyRoutePlant"><option value="*">* (All Plants in Location)</option></select>
               </div>
               <div>
-                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Plant CC Email(s):</label>
-                <input id="monthlyPlantCc" type="text" placeholder="e.g. pgtl.qa@pgel.in">
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">To Email(s):</label>
+                <input id="monthlyRouteTo" type="text" placeholder="e.g. pune.head@pgel.in">
               </div>
               <div>
-                <button type="button" class="btn" onclick="savePlantEmailRoute()" style="background:#5a67d8">Set Route</button>
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">CC Email(s):</label>
+                <input id="monthlyRouteCc" type="text" placeholder="e.g. pune.qa@pgel.in">
+              </div>
+              <div>
+                <button type="button" class="btn" onclick="saveLocationPlantEmailRoute()" style="background:#5a67d8">Set Route</button>
               </div>
             </div>
 
-            <div style="max-height:140px;overflow:auto;border:1px solid #eee;border-radius:6px;margin-top:10px">
+            <div style="max-height:160px;overflow:auto;border:1px solid #eee;border-radius:6px;margin-top:10px">
               <table style="width:100%;font-size:12px;border-collapse:collapse;">
                 <thead style="background:#f1f5f9;color:#475569;">
                   <tr>
-                    <th style="padding:6px 8px;text-align:left;">Plant</th>
+                    <th style="padding:6px 8px;text-align:left;">Scope / Level</th>
                     <th style="padding:6px 8px;text-align:left;">To</th>
                     <th style="padding:6px 8px;text-align:left;">CC</th>
                     <th style="padding:6px 8px;text-align:center;width:60px;">Action</th>
@@ -769,15 +773,19 @@
 
           <!-- Test / On-demand Email Trigger Card -->
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin-bottom:16px;">
-            <h5 style="margin:0 0 6px 0;font-size:13px;color:#166534">⚡ Test & Live Email Preview</h5>
+            <h5 style="margin:0 0 6px 0;font-size:13px;color:#166534">⚡ Test &amp; Live Email Preview</h5>
             <p style="margin:0 0 10px 0;font-size:12px;color:#15803d">Preview the exact email layout on screen or dispatch a test report email directly.</p>
-            <div class="row" style="grid-template-columns:130px 130px 1fr auto auto;gap:8px;align-items:end">
+            <div class="row" style="grid-template-columns:110px 120px 120px 1fr auto auto;gap:8px;align-items:end">
               <div>
                 <label style="font-size:11px;font-weight:600;color:#166534;display:block;margin-bottom:4px">Target Month:</label>
                 <select id="monthlyTestMonth">
                   <option value="last">Previous Month (Default)</option>
                   <option value="current">Current Month So Far</option>
                 </select>
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#166534;display:block;margin-bottom:4px">Target Location:</label>
+                <select id="monthlyTestLocation" onchange="syncMonthlyTestPlantDropdown()"><option value="*">All Locations</option></select>
               </div>
               <div>
                 <label style="font-size:11px;font-weight:600;color:#166534;display:block;margin-bottom:4px">Target Plant:</label>
@@ -2340,19 +2348,78 @@ async function protectedExportToExcel(type) {
     // MONTHLY REPORT & AUTO-EMAIL SETTINGS
     // ==========================================
 
+    function syncMonthlyRoutePlantDropdown() {
+      const loc = document.getElementById('monthlyRouteLocation') ? document.getElementById('monthlyRouteLocation').value : '*';
+      const plantSel = document.getElementById('monthlyRoutePlant');
+      if (!plantSel) return;
+      plantSel.innerHTML = '<option value="*">* (All Plants in Location)</option>';
+
+      const cfg = APP_STATE.config || {};
+      let plants = [];
+      if (loc && loc !== '*') {
+        const locPlants = (cfg.locations && cfg.locations[loc] && cfg.locations[loc].plants) || {};
+        plants = Object.keys(locPlants);
+      } else {
+        plants = Object.keys(cfg.plants || {});
+      }
+      plants.sort().forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        plantSel.appendChild(opt);
+      });
+    }
+
+    function syncMonthlyTestPlantDropdown() {
+      const loc = document.getElementById('monthlyTestLocation') ? document.getElementById('monthlyTestLocation').value : '*';
+      const plantSel = document.getElementById('monthlyTestPlant');
+      if (!plantSel) return;
+      plantSel.innerHTML = '<option value="*">All Plants</option>';
+
+      const cfg = APP_STATE.config || {};
+      let plants = [];
+      if (loc && loc !== '*') {
+        const locPlants = (cfg.locations && cfg.locations[loc] && cfg.locations[loc].plants) || {};
+        plants = Object.keys(locPlants);
+      } else {
+        plants = Object.keys(cfg.plants || {});
+      }
+      plants.sort().forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        plantSel.appendChild(opt);
+      });
+    }
+
     async function loadMonthlyReportSettingsToUI() {
       const cfg = APP_STATE.config || {};
-      const allPlants = Object.keys(cfg.plants || {}).sort();
-      fillSelect(document.getElementById('monthlyPlantPick'), allPlants, 'Select Plant');
-      fillSelect(document.getElementById('monthlyTestPlant'), allPlants, 'All Plants');
-      const testPlantSel = document.getElementById('monthlyTestPlant');
-      if (testPlantSel && !testPlantSel.querySelector('option[value="*"]')) {
-        const opt = document.createElement('option');
-        opt.value = '*';
-        opt.textContent = 'All Plants';
-        testPlantSel.insertBefore(opt, testPlantSel.firstChild);
-        testPlantSel.value = '*';
+      const locations = Object.keys(cfg.locations || { Pune: {}, Supa: {} }).sort();
+
+      const locPick = document.getElementById('monthlyRouteLocation');
+      if (locPick) {
+        locPick.innerHTML = '<option value="*">All Locations</option>';
+        locations.forEach(loc => {
+          const opt = document.createElement('option');
+          opt.value = loc;
+          opt.textContent = loc;
+          locPick.appendChild(opt);
+        });
       }
+
+      const testLocPick = document.getElementById('monthlyTestLocation');
+      if (testLocPick) {
+        testLocPick.innerHTML = '<option value="*">All Locations</option>';
+        locations.forEach(loc => {
+          const opt = document.createElement('option');
+          opt.value = loc;
+          opt.textContent = loc;
+          testLocPick.appendChild(opt);
+        });
+      }
+
+      syncMonthlyRoutePlantDropdown();
+      syncMonthlyTestPlantDropdown();
 
       let settings = cfg.monthlyReportSettings || null;
       if (!settings) {
@@ -2369,6 +2436,7 @@ async function protectedExportToExcel(type) {
         enabled: true,
         defaultTo: 'verify.software2040@pgel.in',
         defaultCc: '',
+        locationRoutes: {},
         plantRoutes: {}
       };
 
@@ -2387,58 +2455,107 @@ async function protectedExportToExcel(type) {
     function renderMonthlyPlantRoutesTable() {
       const tbody = document.getElementById('monthlyPlantRoutesTableBody');
       if (!tbody) return;
-      const routes = (APP_STATE.config && APP_STATE.config.monthlyReportSettings && APP_STATE.config.monthlyReportSettings.plantRoutes) || {};
-      const plants = Object.keys(routes).sort();
-      if (!plants.length) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;padding:8px">No plant overrides configured. All plants will use global default To/CC.</td></tr>';
+      const settings = (APP_STATE.config && APP_STATE.config.monthlyReportSettings) || {};
+      const locRoutes = settings.locationRoutes || {};
+      const plantRoutes = settings.plantRoutes || {};
+
+      const locKeys = Object.keys(locRoutes).sort();
+      const plantKeys = Object.keys(plantRoutes).sort();
+
+      if (!locKeys.length && !plantKeys.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;padding:10px">No location or plant overrides configured. All plants will use global default To/CC.</td></tr>';
         return;
       }
       tbody.innerHTML = '';
-      plants.forEach((p) => {
-        const r = routes[p] || {};
+
+      // Render location-level routes first
+      locKeys.forEach((loc) => {
+        const r = locRoutes[loc] || {};
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid #f1f5f9';
         tr.innerHTML = `
-          <td style="padding:6px 8px;font-weight:700;color:#1e293b">${p}</td>
+          <td style="padding:6px 8px;font-weight:700;color:#1e40af">
+            <span style="display:inline-block;background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:4px;font-size:11px;">📍 Location: ${loc} [All Plants]</span>
+          </td>
           <td style="padding:6px 8px;color:#334155">${r.to || '<i style="color:#94a3b8">(global default)</i>'}</td>
           <td style="padding:6px 8px;color:#334155">${r.cc || '<i style="color:#94a3b8">(none)</i>'}</td>
           <td style="padding:6px 8px;text-align:center;">
-            <button type="button" class="btn" onclick="deletePlantEmailRoute('${p}')" style="background:#ef4444;padding:2px 6px;font-size:11px">Delete</button>
+            <button type="button" class="btn" onclick="deleteEmailRoute('location', '${loc}')" style="background:#ef4444;padding:2px 6px;font-size:11px">Delete</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // Render plant-specific routes
+      plantKeys.forEach((p) => {
+        const r = plantRoutes[p] || {};
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #f1f5f9';
+        tr.innerHTML = `
+          <td style="padding:6px 8px;font-weight:700;color:#334155">
+            <span style="display:inline-block;background:#f1f5f9;color:#334155;padding:2px 6px;border-radius:4px;font-size:11px;">🏢 Plant: ${p}</span>
+          </td>
+          <td style="padding:6px 8px;color:#334155">${r.to || '<i style="color:#94a3b8">(global default)</i>'}</td>
+          <td style="padding:6px 8px;color:#334155">${r.cc || '<i style="color:#94a3b8">(none)</i>'}</td>
+          <td style="padding:6px 8px;text-align:center;">
+            <button type="button" class="btn" onclick="deleteEmailRoute('plant', '${p}')" style="background:#ef4444;padding:2px 6px;font-size:11px">Delete</button>
           </td>
         `;
         tbody.appendChild(tr);
       });
     }
 
-    function savePlantEmailRoute() {
-      const plant = document.getElementById('monthlyPlantPick').value;
-      const to = String(document.getElementById('monthlyPlantTo').value || '').trim();
-      const cc = String(document.getElementById('monthlyPlantCc').value || '').trim();
-      if (!plant) {
-        showNotice('Please select a plant first.', 'error');
-        return;
-      }
+    function saveLocationPlantEmailRoute() {
+      const loc = document.getElementById('monthlyRouteLocation').value;
+      const plant = document.getElementById('monthlyRoutePlant').value;
+      const to = String(document.getElementById('monthlyRouteTo').value || '').trim();
+      const cc = String(document.getElementById('monthlyRouteCc').value || '').trim();
+
       if (!to && !cc) {
         showNotice('Enter at least a To or CC email address.', 'error');
         return;
       }
+
       APP_STATE.config = APP_STATE.config || {};
       APP_STATE.config.monthlyReportSettings = APP_STATE.config.monthlyReportSettings || {};
+      APP_STATE.config.monthlyReportSettings.locationRoutes = APP_STATE.config.monthlyReportSettings.locationRoutes || {};
       APP_STATE.config.monthlyReportSettings.plantRoutes = APP_STATE.config.monthlyReportSettings.plantRoutes || {};
-      APP_STATE.config.monthlyReportSettings.plantRoutes[plant] = { to, cc };
-      
-      document.getElementById('monthlyPlantTo').value = '';
-      document.getElementById('monthlyPlantCc').value = '';
+
+      if (plant === '*' && loc !== '*') {
+        // Location-level multi-plant route
+        APP_STATE.config.monthlyReportSettings.locationRoutes[loc] = { to, cc };
+        showNotice(`Location-level route saved for ${loc} (applies to all plants under ${loc}).`, 'success');
+      } else if (plant !== '*') {
+        // Specific plant override
+        APP_STATE.config.monthlyReportSettings.plantRoutes[plant] = { to, cc };
+        showNotice(`Plant-specific route saved for ${plant}.`, 'success');
+      } else {
+        // Both are '*' -> Global default
+        APP_STATE.config.monthlyReportSettings.defaultTo = to;
+        APP_STATE.config.monthlyReportSettings.defaultCc = cc;
+        const toEl = document.getElementById('monthlyDefaultTo');
+        const ccEl = document.getElementById('monthlyDefaultCc');
+        if (toEl) toEl.value = to;
+        if (ccEl) ccEl.value = cc;
+        showNotice('Global default To/CC email route updated.', 'success');
+      }
+
+      document.getElementById('monthlyRouteTo').value = '';
+      document.getElementById('monthlyRouteCc').value = '';
       renderMonthlyPlantRoutesTable();
-      showNotice(`Email route updated for plant ${plant}.`, 'success');
-      queueAutoSyncSettings('monthly_report_plant_route');
+      queueAutoSyncSettings('monthly_report_route_update');
     }
 
-    function deletePlantEmailRoute(plant) {
-      if (APP_STATE.config?.monthlyReportSettings?.plantRoutes?.[plant]) {
-        delete APP_STATE.config.monthlyReportSettings.plantRoutes[plant];
+    function deleteEmailRoute(scope, key) {
+      if (scope === 'location' && APP_STATE.config?.monthlyReportSettings?.locationRoutes?.[key]) {
+        delete APP_STATE.config.monthlyReportSettings.locationRoutes[key];
         renderMonthlyPlantRoutesTable();
-        showNotice(`Removed custom route for ${plant}.`, 'info');
+        showNotice(`Removed location route for ${key}.`, 'info');
+        queueAutoSyncSettings('monthly_report_location_route_delete');
+      } else if (scope === 'plant' && APP_STATE.config?.monthlyReportSettings?.plantRoutes?.[key]) {
+        delete APP_STATE.config.monthlyReportSettings.plantRoutes[key];
+        renderMonthlyPlantRoutesTable();
+        showNotice(`Removed plant route for ${key}.`, 'info');
         queueAutoSyncSettings('monthly_report_plant_route_delete');
       }
     }
@@ -2468,7 +2585,7 @@ async function protectedExportToExcel(type) {
       }
     }
 
-    function buildLocalMonthlyReportHtml(plantName, monthLabel, records, totalLeaks) {
+    function buildLocalMonthlyReportHtml(plantName, locationName, monthLabel, records, totalLeaks) {
       let criticalCount = 0;
       let majorCount = 0;
       let minorCount = 0;
@@ -2637,6 +2754,7 @@ async function protectedExportToExcel(type) {
               <div style="font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">PG ELECTROPLAST LIMITED</div>
               <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">Monthly AC Leakage Quality Report</h1>
               <div style="display:block;margin-top:10px;">
+                <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">LOCATION:</b> ${locationName || 'Corporate'}</span>
                 <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">PLANT:</b> ${plantName}</span>
                 <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ${monthLabel}</span>
               </div>
@@ -2650,7 +2768,7 @@ async function protectedExportToExcel(type) {
               <!-- Executive Summary Callout -->
               <div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:22px;">
                 <p style="margin:0;font-size:13px;color:#334155;line-height:1.6;">
-                  Performance overview for <b>${plantName}</b> during <b>${monthLabel}</b>. Total of <b>${totalLeaks}</b> leakage defect(s) logged across all production lines and shifts.
+                  Performance overview for <b>${plantName}${locationName && locationName !== 'All Locations' ? ' (' + locationName + ')' : ''}</b> during <b>${monthLabel}</b>. Total of <b>${totalLeaks}</b> leakage defect(s) logged across all production lines and shifts.
                 </p>
               </div>
               
@@ -2787,7 +2905,7 @@ async function protectedExportToExcel(type) {
           <!-- Footer -->
           <tr>
             <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 24px;text-align:center;font-size:11px;color:#64748b;">
-              Generated on ${generatedDate} | AC Leakage Monitoring Portal | PG Electroplast Limited
+              Generated on ${generatedDate} | AC Leakage Monitoring Portal | PG Electroplast Limited (${locationName || 'Corporate'})
             </td>
           </tr>
           
@@ -2801,7 +2919,8 @@ async function protectedExportToExcel(type) {
 
     async function previewMonthlyEmailModal() {
       const monthChoice = document.getElementById('monthlyTestMonth').value;
-      const plant = document.getElementById('monthlyTestPlant').value;
+      const location = document.getElementById('monthlyTestLocation') ? document.getElementById('monthlyTestLocation').value : '*';
+      const plant = document.getElementById('monthlyTestPlant') ? document.getElementById('monthlyTestPlant').value : '*';
       const btn = document.getElementById('previewEmailBtn');
 
       const now = new Date();
@@ -2816,6 +2935,7 @@ async function protectedExportToExcel(type) {
 
       const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
       const monthLabel = `${monthNames[targetMonth - 1]} ${targetYear}`;
+      const locationDisplay = location === '*' ? 'All Locations' : location;
       const plantDisplay = plant === '*' ? 'All Plants' : plant;
 
       if (btn) {
@@ -2829,6 +2949,7 @@ async function protectedExportToExcel(type) {
       const relevant = (currentData || []).filter(r => {
         const ts = toDate(r.timestamp);
         if (!ts || ts < startDate || ts > endDate) return false;
+        if (location !== '*' && location && canonicalLocationName(r.location || 'Pune') !== canonicalLocationName(location)) return false;
         if (plant !== '*' && plant && canonicalPlantName(r.plant) !== canonicalPlantName(plant)) return false;
         return true;
       });
@@ -2838,14 +2959,14 @@ async function protectedExportToExcel(type) {
         totalLeaks += Number(r.quantity) > 0 ? Number(r.quantity) : 1;
       });
 
-      const localHtml = buildLocalMonthlyReportHtml(plantDisplay, monthLabel, relevant, totalLeaks);
+      const localHtml = buildLocalMonthlyReportHtml(plantDisplay, locationDisplay, monthLabel, relevant, totalLeaks);
 
       const iframe = document.getElementById('emailPreviewIframe');
       const modal = document.getElementById('emailPreviewModal');
       const titleEl = document.getElementById('previewModalTitle');
       const subEl = document.getElementById('previewModalSubtitle');
 
-      if (titleEl) titleEl.textContent = `Report Preview: ${plantDisplay} — ${monthLabel}`;
+      if (titleEl) titleEl.textContent = `Report Preview: ${plantDisplay} (${locationDisplay}) — ${monthLabel}`;
       if (subEl) subEl.textContent = `Total Leaks in Period: ${totalLeaks} | Formatted HTML Quality Email`;
 
       modal.style.display = 'flex';
@@ -2859,6 +2980,7 @@ async function protectedExportToExcel(type) {
         const res = await otpRequest('previewMonthlyReport', {
           month: targetMonth,
           year: targetYear,
+          location: location === '*' ? '' : location,
           plant: plant === '*' ? '' : plant
         });
         if (res && res.html) {
@@ -2867,7 +2989,6 @@ async function protectedExportToExcel(type) {
           doc.close();
         }
       } catch (e) {
-        // Local generator already rendered seamlessly
         console.log('Preview rendered with local generator.');
       } finally {
         if (btn) {
@@ -2943,7 +3064,8 @@ async function protectedExportToExcel(type) {
       const btn = document.getElementById('sendTestReportBtn');
       const msgEl = document.getElementById('monthlyTestResultMsg');
       const monthChoice = document.getElementById('monthlyTestMonth').value;
-      const plant = document.getElementById('monthlyTestPlant').value;
+      const location = document.getElementById('monthlyTestLocation') ? document.getElementById('monthlyTestLocation').value : '*';
+      const plant = document.getElementById('monthlyTestPlant') ? document.getElementById('monthlyTestPlant').value : '*';
       const testEmail = String(document.getElementById('monthlyTestEmailOverride').value || '').trim();
 
       const now = new Date();
@@ -2972,6 +3094,7 @@ async function protectedExportToExcel(type) {
         const res = await otpRequest('sendMonthlyReports', {
           month,
           year,
+          location: location === '*' ? '' : location,
           plant: plant === '*' ? '' : plant,
           testEmail: testEmail || undefined,
           actorEmail: APP_STATE.user?.email || 'admin_test',
@@ -2980,7 +3103,7 @@ async function protectedExportToExcel(type) {
 
         if (res.ok) {
           const sent = res.sentCount || 0;
-          const details = (res.results || []).map(r => `${r.plant}: ${r.status === 'sent' ? '✅ Sent to ' + r.to : '⚠️ ' + (r.reason || r.error)}`).join(' | ');
+          const details = (res.results || []).map(r => `${r.plant} (${r.location || 'Pune'}): ${r.status === 'sent' ? '✅ Sent to ' + r.to : '⚠️ ' + (r.reason || r.error)}`).join(' | ');
           msgEl.style.background = '#dcfce7';
           msgEl.style.color = '#15803d';
           msgEl.innerHTML = `<b>Success!</b> Sent ${sent} report(s) for <b>${res.month || monthLabel}</b>.<br><span style="font-size:11px">${details}</span>`;
@@ -2990,7 +3113,7 @@ async function protectedExportToExcel(type) {
           // Log locally so admin has record
           const localEntry = {
             timestamp: new Date().toISOString(),
-            plant: plant === '*' ? 'All Plants' : plant,
+            plant: `${plant === '*' ? 'All Plants' : plant} (${location === '*' ? 'All Locations' : location})`,
             month: monthLabel,
             to: testEmail || 'Configured Routes',
             cc: '',
@@ -3007,7 +3130,7 @@ async function protectedExportToExcel(type) {
       } catch (e) {
         const localEntry = {
           timestamp: new Date().toISOString(),
-          plant: plant === '*' ? 'All Plants' : plant,
+          plant: `${plant === '*' ? 'All Plants' : plant} (${location === '*' ? 'All Locations' : location})`,
           month: monthLabel,
           to: testEmail || 'Configured Routes',
           cc: '',
