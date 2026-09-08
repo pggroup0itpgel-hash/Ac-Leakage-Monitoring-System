@@ -1194,8 +1194,8 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     });
   }
 
-  const generatedDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata', 'dd MMM yyyy, hh:mm a');
-  const locBadge = locationName ? ('<span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">LOCATION:</b> ' + locationName + '</span>') : '';
+   const generatedDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata', 'dd MMM yyyy, hh:mm a');
+  const locBadge = '<span style="display:inline-block;background-color:#334155;background:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">LOCATION:</b> ' + (locationName || 'Corporate') + '</span>';
 
   return [
     '<!DOCTYPE html>',
@@ -1205,17 +1205,17 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     '  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;padding:24px 0;">',
     '    <tr>',
     '      <td align="center">',
-    '        <table role="presentation" width="100%" style="max-width:680px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);border:1px solid #e2e8f0;" cellspacing="0" cellpadding="0">',
+    '        <table role="presentation" width="100%" style="max-width:680px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);border:1px solid #e2e8f0;" cellspacing="0" cellpadding="0">',
     '          ',
-    '          <!-- Header Banner -->',
+    '          <!-- Header Banner (Solid background for full Gmail & Outlook compatibility) -->',
     '          <tr>',
-    '            <td style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);padding:28px 24px;text-align:left;color:#ffffff;border-bottom:3px solid #3b82f6;">',
-    '              <div style="font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">PG ELECTROPLAST LIMITED</div>',
+    '            <td bgcolor="#1e293b" style="background-color:#1e293b !important;background:#1e293b;padding:28px 24px;text-align:left;color:#ffffff;border-bottom:3px solid #3b82f6;">',
+    '              <div style="font-size:12px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">PG GROUP</div>',
     '              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">Monthly AC Leakage Quality Report</h1>',
     '              <div style="display:block;margin-top:10px;">',
     '                ' + locBadge,
-    '                <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">PLANT:</b> ' + plantName + '</span>',
-    '                <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ' + monthLabel + '</span>',
+    '                <span style="display:inline-block;background-color:#334155;background:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">PLANT:</b> ' + plantName + '</span>',
+    '                <span style="display:inline-block;background-color:#334155;background:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ' + monthLabel + '</span>',
     '              </div>',
     '            </td>',
     '          </tr>',
@@ -1338,25 +1338,25 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     '              </table>',
     '              ',
     '              ' + (jointRowsHtml ? [
-      '              <!-- Top Joint Leakage Points -->',
-      '              <div style="margin-bottom:20px;">',
-      '                <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Top Leakage Joints</div>',
-      '                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
-      '                  <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
-      '                    <tr>',
-      '                      <th style="padding:8px 12px;text-align:left;">Joint / Location</th>',
-      '                      <th style="padding:8px 12px;text-align:right;">Leak Frequency</th>',
-      '                    </tr>',
-      '                  </thead>',
-      '                  <tbody>' + jointRowsHtml + '</tbody>',
-      '                </table>',
-      '              </div>'
+    '              <!-- Top Joint Leakage Points -->',
+    '              <div style="margin-bottom:20px;">',
+    '                <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Top Leakage Joints</div>',
+    '                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
+    '                  <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
+    '                    <tr>',
+    '                      <th style="padding:8px 12px;text-align:left;">Joint / Location</th>',
+    '                      <th style="padding:8px 12px;text-align:right;">Leak Frequency</th>',
+    '                    </tr>',
+    '                  </thead>',
+    '                  <tbody>' + jointRowsHtml + '</tbody>',
+    '                </table>',
+    '              </div>'
     ].join('') : '') + '',
     '              ',
     '              <!-- PROMINENT AUTO-GENERATED DISCLAIMER -->',
     '              <div style="margin-top:24px;padding:14px 18px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:12px;line-height:1.5;">',
     '                <div style="font-weight:800;font-size:12px;margin-bottom:4px;letter-spacing:0.5px;">[ AUTOMATED REPORT NOTICE ]</div>',
-    '                <div>This is an <b>auto-generated report</b> produced by the <b>PG Electroplast AC Leakage Monitoring System</b>. Please do not reply directly to this email. For any queries, discrepancies, or routing changes, please contact the Quality Team or IT Admin.</div>',
+    '                <div>This is an <b>auto-generated report</b> produced by the <b>PG Group AC Leakage Monitoring System</b>. Please do not reply directly to this email. For any queries, discrepancies, or routing changes, please contact the Quality Team or IT Admin.</div>',
     '              </div>',
     '              ',
     '            </td>',
@@ -1365,7 +1365,7 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     '          <!-- Footer -->',
     '          <tr>',
     '            <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 24px;text-align:center;font-size:11px;color:#64748b;">',
-    '              Generated on ' + generatedDate + ' | AC Leakage Monitoring Portal | PG Electroplast Limited',
+    '              Generated on ' + generatedDate + ' | AC Leakage Monitoring Portal | PG Group',
     '            </td>',
     '          </tr>',
     '          ',
@@ -1486,7 +1486,7 @@ function sendMonthlyPlantLeakageReports(options) {
     });
 
     const htmlBody = buildMonthlyReportHtml_(plant, location, monthLabel, recs, totalLeaks);
-    const subject = 'AC Leakage Performance Report — ' + plant + ' (' + location + ') [' + monthLabel + ']';
+    const subject = 'PG Group AC Leakage Performance Report — ' + plant + ' (' + location + ') [' + monthLabel + ']';
 
     try {
       sendSystemEmail_(toList, ccList, subject, htmlBody);
