@@ -442,15 +442,30 @@
         </div>
       </div>
 
+      <!-- Charts Time Period Selector -->
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:8px 14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04);flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">📅</span>
+          <span style="font-weight:700;font-size:13px;color:#1e293b;">Charts Time Period Filter:</span>
+          <span style="font-size:11px;color:#64748b;">(Controls top 6 distribution/pareto charts &amp; Production Line comparison)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label for="chartsPeriodSelect" style="font-size:12px;font-weight:600;color:#475569;">Selected Period:</label>
+          <select id="chartsPeriodSelect" onchange="onChartsPeriodChange()" style="padding:5px 12px;border-radius:6px;border:1.5px solid #6366f1;font-weight:700;color:#1e293b;background:#f8fafc;font-size:12px;cursor:pointer;outline:none;">
+            <option value="all">All Time (Complete History)</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Row 1: Plant, Defect, IDU (3 columns - 300px height) -->
       <div class="chart-grid-3">
         <div class="chart-container">
-          <h3>🏭 Plant Distribution</h3>
+          <h3 id="plantDistTitle">🏭 Plant Distribution</h3>
           <div class="chart-wrapper"><canvas id="plantChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-          <h3>🔍 Defect Type Distribution</h3>
+          <h3 id="defectDistTitle">🔍 Defect Type Distribution</h3>
           <div class="chart-wrapper"><canvas id="defectChart"></canvas></div>
         </div>
 
@@ -463,12 +478,12 @@
       <!-- Row 2: Shift, Action, ODU (3 columns - 300px height) -->
       <div class="chart-grid-3">
         <div class="chart-container">
-          <h3>🌅 Shift-wise Contribution</h3>
+          <h3 id="shiftDistTitle">🌅 Shift-wise Contribution</h3>
           <div class="chart-wrapper"><canvas id="severityChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-          <h3>✅ Action Distribution</h3>
+          <h3 id="actionDistTitle">✅ Action Distribution</h3>
           <div class="chart-wrapper"><canvas id="actionChart"></canvas></div>
         </div>
 
@@ -494,7 +509,7 @@
       <!-- Row 4: Production Line + Plant Monthly (2 columns - 300px height) -->
       <div class="chart-grid-2">
         <div class="chart-container">
-          <h3>📊 Production Line Comparison</h3>
+          <h3 id="lineCompTitle">📊 Production Line Comparison</h3>
           <div class="chart-wrapper"><canvas id="lineComparisonChart"></canvas></div>
         </div>
 
@@ -2453,52 +2468,407 @@ async function protectedExportToExcel(type) {
       }
     }
 
+    function buildLocalMonthlyReportHtml(plantName, monthLabel, records, totalLeaks) {
+      let criticalCount = 0;
+      let majorCount = 0;
+      let minorCount = 0;
+      let reworkCount = 0;
+      let scrapCount = 0;
+      let acceptedCount = 0;
+
+      const defectCounts = {};
+      const lineCounts = {};
+      const shiftCounts = {};
+      const unitCounts = {};
+      const jointCounts = {};
+
+      records.forEach(r => {
+        const qty = Number(r.quantity) > 0 ? Number(r.quantity) : 1;
+        const sev = String(r.severity || '').toLowerCase();
+        if (sev === 'critical') criticalCount += qty;
+        else if (sev === 'major') majorCount += qty;
+        else minorCount += qty;
+
+        const act = String(r.action || '').toLowerCase();
+        if (act.includes('rework')) reworkCount += qty;
+        else if (act.includes('scrap')) scrapCount += qty;
+        else if (act.includes('accept')) acceptedCount += qty;
+
+        const def = String(r.defectType || 'Other').trim();
+        defectCounts[def] = (defectCounts[def] || 0) + qty;
+
+        const line = String(r.line || r.productionLine || 'Unknown').trim();
+        lineCounts[line] = (lineCounts[line] || 0) + qty;
+
+        const shift = String(r.shift || 'General').trim();
+        shiftCounts[shift] = (shiftCounts[shift] || 0) + qty;
+
+        const unit = String(r.type || r.unitType || r.unit || 'Other').trim();
+        unitCounts[unit] = (unitCounts[unit] || 0) + qty;
+
+        const joint = String(r.joint || r.jointNo || '').trim();
+        if (joint) {
+          jointCounts[joint] = (jointCounts[joint] || 0) + qty;
+        }
+      });
+
+      const sortedDefects = Object.keys(defectCounts).map(k => ({
+        name: k,
+        count: defectCounts[k],
+        pct: totalLeaks > 0 ? Math.round((defectCounts[k] / totalLeaks) * 100) : 0
+      })).sort((a, b) => b.count - a.count);
+
+      const sortedUnits = Object.keys(unitCounts).map(k => ({
+        name: k,
+        count: unitCounts[k],
+        pct: totalLeaks > 0 ? Math.round((unitCounts[k] / totalLeaks) * 100) : 0
+      })).sort((a, b) => b.count - a.count);
+
+      const sortedLines = Object.keys(lineCounts).map(k => ({
+        name: k,
+        count: lineCounts[k]
+      })).sort((a, b) => b.count - a.count);
+
+      const sortedShifts = Object.keys(shiftCounts).map(k => ({
+        name: k,
+        count: shiftCounts[k]
+      })).sort((a, b) => b.count - a.count);
+
+      const sortedJoints = Object.keys(jointCounts).map(k => ({
+        name: k,
+        count: jointCounts[k]
+      })).sort((a, b) => b.count - a.count).slice(0, 5);
+
+      let defectRowsHtml = '';
+      if (sortedDefects.length === 0) {
+        defectRowsHtml = '<tr><td colspan="3" style="padding:12px;text-align:center;color:#64748b;">No defect data recorded.</td></tr>';
+      } else {
+        sortedDefects.forEach((d, idx) => {
+          const barColor = idx === 0 ? '#4f46e5' : idx === 1 ? '#06b6d4' : '#64748b';
+          defectRowsHtml += `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:10px 12px;color:#1e293b;font-weight:600;font-size:13px;">${d.name}</td>
+              <td style="padding:10px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">${d.count}</td>
+              <td style="padding:10px 12px;width:140px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="flex:1;background:#e2e8f0;border-radius:999px;height:8px;overflow:hidden;">
+                    <div style="background:${barColor};width:${Math.min(100, d.pct)}%;height:8px;border-radius:999px;"></div>
+                  </div>
+                  <span style="font-size:11px;font-weight:700;color:#475569;width:32px;text-align:right;">${d.pct}%</span>
+                </div>
+              </td>
+            </tr>`;
+        });
+      }
+
+      let unitRowsHtml = '';
+      if (sortedUnits.length === 0) {
+        unitRowsHtml = '<tr><td colspan="3" style="padding:12px;text-align:center;color:#64748b;">No unit data recorded.</td></tr>';
+      } else {
+        sortedUnits.forEach((u, idx) => {
+          const barColor = idx === 0 ? '#10b981' : idx === 1 ? '#3b82f6' : '#8b5cf6';
+          unitRowsHtml += `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:9px 12px;color:#1e293b;font-weight:600;font-size:13px;">${u.name}</td>
+              <td style="padding:9px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">${u.count}</td>
+              <td style="padding:9px 12px;width:120px;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <div style="flex:1;background:#e2e8f0;border-radius:999px;height:7px;overflow:hidden;">
+                    <div style="background:${barColor};width:${Math.min(100, u.pct)}%;height:7px;border-radius:999px;"></div>
+                  </div>
+                  <span style="font-size:11px;font-weight:700;color:#475569;width:30px;text-align:right;">${u.pct}%</span>
+                </div>
+              </td>
+            </tr>`;
+        });
+      }
+
+      let lineRowsHtml = '';
+      if (sortedLines.length === 0) {
+        lineRowsHtml = '<tr><td colspan="2" style="padding:12px;text-align:center;color:#64748b;">No line records.</td></tr>';
+      } else {
+        sortedLines.forEach(l => {
+          lineRowsHtml += `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">${l.name}</td>
+              <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">${l.count}</td>
+            </tr>`;
+        });
+      }
+
+      let shiftRowsHtml = '';
+      if (sortedShifts.length === 0) {
+        shiftRowsHtml = '<tr><td colspan="2" style="padding:12px;text-align:center;color:#64748b;">No shift records.</td></tr>';
+      } else {
+        sortedShifts.forEach(s => {
+          shiftRowsHtml += `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">${s.name}</td>
+              <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">${s.count}</td>
+            </tr>`;
+        });
+      }
+
+      let jointRowsHtml = '';
+      if (sortedJoints.length > 0) {
+        sortedJoints.forEach(j => {
+          jointRowsHtml += `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:8px 12px;color:#334155;font-weight:600;font-size:12px;">${j.name}</td>
+              <td style="padding:8px 12px;text-align:right;font-weight:700;color:#dc2626;font-size:12px;">${j.count}</td>
+            </tr>`;
+        });
+      }
+
+      const generatedDate = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+
+      return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width:680px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);border:1px solid #e2e8f0;" cellspacing="0" cellpadding="0">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);padding:28px 24px;text-align:left;color:#ffffff;border-bottom:3px solid #3b82f6;">
+              <div style="font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">PG ELECTROPLAST LIMITED</div>
+              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">Monthly AC Leakage Quality Report</h1>
+              <div style="display:block;margin-top:10px;">
+                <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">PLANT:</b> ${plantName}</span>
+                <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ${monthLabel}</span>
+              </div>
+            </td>
+          </tr>
+          
+          <!-- Main Content Container -->
+          <tr>
+            <td style="padding:24px;">
+              
+              <!-- Executive Summary Callout -->
+              <div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:22px;">
+                <p style="margin:0;font-size:13px;color:#334155;line-height:1.6;">
+                  Performance overview for <b>${plantName}</b> during <b>${monthLabel}</b>. Total of <b>${totalLeaks}</b> leakage defect(s) logged across all production lines and shifts.
+                </p>
+              </div>
+              
+              <!-- KPI Metric Cards Grid (6 cards) -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:22px;">
+                <tr>
+                  <td width="33.33%" style="padding:4px;">
+                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 8px;text-align:center;">
+                      <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;">TOTAL LEAKS</div>
+                      <div style="font-size:24px;font-weight:900;color:#1e3a8a;margin-top:2px;">${totalLeaks}</div>
+                    </div>
+                  </td>
+                  <td width="33.33%" style="padding:4px;">
+                    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 8px;text-align:center;">
+                      <div style="font-size:11px;font-weight:700;color:#b91c1c;text-transform:uppercase;">CRITICAL</div>
+                      <div style="font-size:24px;font-weight:900;color:#991b1b;margin-top:2px;">${criticalCount}</div>
+                    </div>
+                  </td>
+                  <td width="33.33%" style="padding:4px;">
+                    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 8px;text-align:center;">
+                      <div style="font-size:11px;font-weight:700;color:#c2410c;text-transform:uppercase;">MAJOR</div>
+                      <div style="font-size:24px;font-weight:900;color:#9a3412;margin-top:2px;">${majorCount}</div>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td width="33.33%" style="padding:4px;">
+                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 8px;text-align:center;">
+                      <div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;">MINOR</div>
+                      <div style="font-size:24px;font-weight:900;color:#166534;margin-top:2px;">${minorCount}</div>
+                    </div>
+                  </td>
+                  <td width="33.33%" style="padding:4px;">
+                    <div style="background:#fefce8;border:1px solid #fef08a;border-radius:10px;padding:12px 8px;text-align:center;">
+                      <div style="font-size:11px;font-weight:700;color:#a16207;text-transform:uppercase;">REWORK</div>
+                      <div style="font-size:24px;font-weight:900;color:#854d0e;margin-top:2px;">${reworkCount}</div>
+                    </div>
+                  </td>
+                  <td width="33.33%" style="padding:4px;">
+                    <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:12px 8px;text-align:center;">
+                      <div style="font-size:11px;font-weight:700;color:#be185d;text-transform:uppercase;">SCRAP</div>
+                      <div style="font-size:24px;font-weight:900;color:#9d174d;margin-top:2px;">${scrapCount}</div>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Unit Type & Defect Breakdown (Two Columns) -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:22px;">
+                <tr>
+                  <td width="50%" valign="top" style="padding-right:8px;">
+                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Unit Type Breakdown</div>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+                        <tr>
+                          <th style="padding:8px 10px;text-align:left;">Unit Type</th>
+                          <th style="padding:8px 6px;text-align:center;">Count</th>
+                          <th style="padding:8px 10px;text-align:left;">Share</th>
+                        </tr>
+                      </thead>
+                      <tbody>${unitRowsHtml}</tbody>
+                    </table>
+                  </td>
+                  <td width="50%" valign="top" style="padding-left:8px;">
+                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Defect Categories</div>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+                        <tr>
+                          <th style="padding:8px 10px;text-align:left;">Category</th>
+                          <th style="padding:8px 6px;text-align:center;">Count</th>
+                          <th style="padding:8px 10px;text-align:left;">Share</th>
+                        </tr>
+                      </thead>
+                      <tbody>${defectRowsHtml}</tbody>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Line Breakdown & Shift Tables (Two Columns) -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:20px;">
+                <tr>
+                  <td width="50%" valign="top" style="padding-right:8px;">
+                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Line Breakdown</div>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+                        <tr>
+                          <th style="padding:8px 12px;text-align:left;">Line</th>
+                          <th style="padding:8px 12px;text-align:right;">Leaks</th>
+                        </tr>
+                      </thead>
+                      <tbody>${lineRowsHtml}</tbody>
+                    </table>
+                  </td>
+                  <td width="50%" valign="top" style="padding-left:8px;">
+                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Shift Distribution</div>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+                        <tr>
+                          <th style="padding:8px 12px;text-align:left;">Shift</th>
+                          <th style="padding:8px 12px;text-align:right;">Leaks</th>
+                        </tr>
+                      </thead>
+                      <tbody>${shiftRowsHtml}</tbody>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              
+              ${jointRowsHtml ? `
+              <!-- Top Joint Leakage Points -->
+              <div style="margin-bottom:20px;">
+                <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Top Leakage Joints</div>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                  <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+                    <tr>
+                      <th style="padding:8px 12px;text-align:left;">Joint / Location</th>
+                      <th style="padding:8px 12px;text-align:right;">Leak Frequency</th>
+                    </tr>
+                  </thead>
+                  <tbody>${jointRowsHtml}</tbody>
+                </table>
+              </div>` : ''}
+              
+              <!-- PROMINENT AUTO-GENERATED DISCLAIMER -->
+              <div style="margin-top:24px;padding:14px 18px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:12px;line-height:1.5;">
+                <div style="font-weight:800;font-size:12px;margin-bottom:4px;letter-spacing:0.5px;">[ AUTOMATED REPORT NOTICE ]</div>
+                <div>This is an <b>auto-generated report</b> produced by the <b>PG Electroplast AC Leakage Monitoring System</b>. Please do not reply directly to this email. For any queries, discrepancies, or routing changes, please contact the Quality Team or IT Admin.</div>
+              </div>
+              
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 24px;text-align:center;font-size:11px;color:#64748b;">
+              Generated on ${generatedDate} | AC Leakage Monitoring Portal | PG Electroplast Limited
+            </td>
+          </tr>
+          
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+    }
+
     async function previewMonthlyEmailModal() {
       const monthChoice = document.getElementById('monthlyTestMonth').value;
       const plant = document.getElementById('monthlyTestPlant').value;
       const btn = document.getElementById('previewEmailBtn');
 
       const now = new Date();
-      let month = now.getMonth() + 1;
-      let year = now.getFullYear();
+      let targetMonth = now.getMonth() + 1;
+      let targetYear = now.getFullYear();
 
       if (monthChoice === 'last') {
         const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        month = prev.getMonth() + 1;
-        year = prev.getFullYear();
+        targetMonth = prev.getMonth() + 1;
+        targetYear = prev.getFullYear();
       }
+
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthLabel = `${monthNames[targetMonth - 1]} ${targetYear}`;
+      const plantDisplay = plant === '*' ? 'All Plants' : plant;
 
       if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<div class="loading"></div> Loading...';
       }
 
+      // Gather local data for robust immediate fallback
+      const startDate = new Date(targetYear, targetMonth - 1, 1, 0, 0, 0);
+      const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+      const relevant = (currentData || []).filter(r => {
+        const ts = toDate(r.timestamp);
+        if (!ts || ts < startDate || ts > endDate) return false;
+        if (plant !== '*' && plant && canonicalPlantName(r.plant) !== canonicalPlantName(plant)) return false;
+        return true;
+      });
+
+      let totalLeaks = 0;
+      relevant.forEach(r => {
+        totalLeaks += Number(r.quantity) > 0 ? Number(r.quantity) : 1;
+      });
+
+      const localHtml = buildLocalMonthlyReportHtml(plantDisplay, monthLabel, relevant, totalLeaks);
+
+      const iframe = document.getElementById('emailPreviewIframe');
+      const modal = document.getElementById('emailPreviewModal');
+      const titleEl = document.getElementById('previewModalTitle');
+      const subEl = document.getElementById('previewModalSubtitle');
+
+      if (titleEl) titleEl.textContent = `Report Preview: ${plantDisplay} — ${monthLabel}`;
+      if (subEl) subEl.textContent = `Total Leaks in Period: ${totalLeaks} | Formatted HTML Quality Email`;
+
+      modal.style.display = 'flex';
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc.open();
+      doc.write(localHtml);
+      doc.close();
+
       try {
+        // Try remote backend generator if available
         const res = await otpRequest('previewMonthlyReport', {
-          month,
-          year,
+          month: targetMonth,
+          year: targetYear,
           plant: plant === '*' ? '' : plant
         });
-
         if (res && res.html) {
-          const iframe = document.getElementById('emailPreviewIframe');
-          const modal = document.getElementById('emailPreviewModal');
-          const titleEl = document.getElementById('previewModalTitle');
-          const subEl = document.getElementById('previewModalSubtitle');
-
-          if (titleEl) titleEl.textContent = `Report Preview: ${res.plant} — ${res.month}`;
-          if (subEl) subEl.textContent = `Total Leaks in Period: ${res.totalLeaks} | Formatted HTML Email Simulation`;
-
-          modal.style.display = 'flex';
-          const doc = iframe.contentDocument || iframe.contentWindow.document;
           doc.open();
           doc.write(res.html);
           doc.close();
-        } else {
-          showNotice('Could not generate email preview.', 'error');
         }
       } catch (e) {
-        showNotice('Preview error: ' + (e.message || 'unknown'), 'error');
+        // Local generator already rendered seamlessly
+        console.log('Preview rendered with local generator.');
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -2517,42 +2887,56 @@ async function protectedExportToExcel(type) {
       if (!tbody) return;
       tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:8px;color:#64748b;">Loading email logs...</td></tr>';
 
+      let logs = [];
       try {
         const res = await otpRequest('getEmailLogs', { limit: 50 });
-        const logs = Array.isArray(res.logs) ? res.logs : [];
-
-        if (!logs.length) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:8px;color:#64748b;">No email activities recorded yet.</td></tr>';
-          return;
+        if (res && Array.isArray(res.logs) && res.logs.length) {
+          logs = res.logs;
         }
-
-        tbody.innerHTML = '';
-        logs.forEach(l => {
-          const tr = document.createElement('tr');
-          tr.style.borderBottom = '1px solid #f1f5f9';
-          const isSuccess = (l.status || '').toUpperCase() === 'SUCCESS';
-          const statusBadge = isSuccess
-            ? '<span style="background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:4px;font-weight:700;">✅ SENT</span>'
-            : '<span style="background:#fee2e2;color:#b91c1c;padding:2px 6px;border-radius:4px;font-weight:700;" title="' + (l.error || '') + '">❌ ERROR</span>';
-
-          const timeStr = l.timestamp ? new Date(l.timestamp).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '-';
-          const toStr = l.to ? (l.to.length > 25 ? l.to.slice(0, 23) + '…' : l.to) : '-';
-          const ccStr = l.cc ? (l.cc.length > 20 ? l.cc.slice(0, 18) + '…' : l.cc) : '';
-
-          tr.innerHTML = `
-            <td style="padding:6px 8px;color:#64748b;white-space:nowrap;">${timeStr}</td>
-            <td style="padding:6px 8px;font-weight:600;color:#1e293b;">${l.plant || 'All'} <span style="font-size:10px;color:#64748b">(${l.month || ''})</span></td>
-            <td style="padding:6px 8px;color:#334155;" title="To: ${l.to || ''}\nCC: ${l.cc || ''}">
-              <b>To:</b> ${toStr} ${ccStr ? `<br><span style="color:#64748b"><b>CC:</b> ${ccStr}</span>` : ''}
-            </td>
-            <td style="padding:6px 8px;text-align:center;font-weight:700;color:#0f172a;">${l.totalLeaks}</td>
-            <td style="padding:6px 8px;text-align:center;">${statusBadge}</td>
-          `;
-          tbody.appendChild(tr);
-        });
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:8px;color:#dc2626;">Failed to load email logs.</td></tr>';
+        console.warn('Backend email logs unavailable:', e);
       }
+
+      // Merge with local storage logs if any
+      const localLogsRaw = localStorage.getItem('ac_leakage_email_logs');
+      if (localLogsRaw) {
+        try {
+          const localLogs = JSON.parse(localLogsRaw);
+          if (Array.isArray(localLogs)) {
+            logs = [...localLogs, ...logs];
+          }
+        } catch (e) {}
+      }
+
+      if (!logs.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:12px;color:#64748b;">No email activities recorded yet. Use the <b>Send Email</b> button above to dispatch or test.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = '';
+      logs.slice(0, 30).forEach(l => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #f1f5f9';
+        const isSuccess = (l.status || '').toUpperCase() === 'SUCCESS' || (l.status || '').toLowerCase() === 'sent';
+        const statusBadge = isSuccess
+          ? '<span style="background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:4px;font-weight:700;font-size:10px;">✅ SENT</span>'
+          : '<span style="background:#fee2e2;color:#b91c1c;padding:2px 6px;border-radius:4px;font-weight:700;font-size:10px;" title="' + (l.error || l.reason || '') + '">⚠️ ' + (l.reason || 'ERROR') + '</span>';
+
+        const timeStr = l.timestamp ? new Date(l.timestamp).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '-';
+        const toStr = l.to ? (l.to.length > 25 ? l.to.slice(0, 23) + '…' : l.to) : '-';
+        const ccStr = l.cc ? (l.cc.length > 20 ? l.cc.slice(0, 18) + '…' : l.cc) : '';
+
+        tr.innerHTML = `
+          <td style="padding:6px 8px;color:#64748b;white-space:nowrap;">${timeStr}</td>
+          <td style="padding:6px 8px;font-weight:600;color:#1e293b;">${l.plant || 'All'} <span style="font-size:10px;color:#64748b">(${l.month || ''})</span></td>
+          <td style="padding:6px 8px;color:#334155;" title="To: ${l.to || ''}\\nCC: ${l.cc || ''}">
+            <b>To:</b> ${toStr} ${ccStr ? `<br><span style="color:#64748b"><b>CC:</b> ${ccStr}</span>` : ''}
+          </td>
+          <td style="padding:6px 8px;text-align:center;font-weight:700;color:#0f172a;">${l.totalLeaks !== undefined ? l.totalLeaks : '-'}</td>
+          <td style="padding:6px 8px;text-align:center;">${statusBadge}</td>
+        `;
+        tbody.appendChild(tr);
+      });
     }
 
     async function triggerMonthlyEmailTest() {
@@ -2571,6 +2955,9 @@ async function protectedExportToExcel(type) {
         month = prev.getMonth() + 1;
         year = prev.getFullYear();
       }
+
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthLabel = `${monthNames[month - 1]} ${year}`;
 
       if (btn) {
         btn.disabled = true;
@@ -2596,18 +2983,43 @@ async function protectedExportToExcel(type) {
           const details = (res.results || []).map(r => `${r.plant}: ${r.status === 'sent' ? '✅ Sent to ' + r.to : '⚠️ ' + (r.reason || r.error)}`).join(' | ');
           msgEl.style.background = '#dcfce7';
           msgEl.style.color = '#15803d';
-          msgEl.innerHTML = `<b>Success!</b> Sent ${sent} report(s) for <b>${res.month || 'Selected Period'}</b>.<br><span style="font-size:11px">${details}</span>`;
+          msgEl.innerHTML = `<b>Success!</b> Sent ${sent} report(s) for <b>${res.month || monthLabel}</b>.<br><span style="font-size:11px">${details}</span>`;
           showNotice(`Monthly report email(s) sent successfully (${sent}).`, 'success');
           loadEmailActivityLogs();
         } else {
+          // Log locally so admin has record
+          const localEntry = {
+            timestamp: new Date().toISOString(),
+            plant: plant === '*' ? 'All Plants' : plant,
+            month: monthLabel,
+            to: testEmail || 'Configured Routes',
+            cc: '',
+            totalLeaks: 0,
+            status: 'ERROR',
+            reason: res.message || res.error || 'Check Apps Script deployment'
+          };
+          saveLocalEmailLog(localEntry);
           msgEl.style.background = '#fee2e2';
           msgEl.style.color = '#b91c1c';
-          msgEl.textContent = 'Report dispatch failed: ' + (res.message || 'Unknown error');
+          msgEl.innerHTML = `<b>Notice:</b> ${res.message || res.error || 'Backend action pending.'}<br><span style="font-size:11px;color:#7f1d1d;">Tip: In Google Sheets, open Apps Script &gt; Deploy &gt; New deployment to enable backend auto-mailer.</span>`;
+          loadEmailActivityLogs();
         }
       } catch (e) {
-        msgEl.style.background = '#fee2e2';
-        msgEl.style.color = '#b91c1c';
-        msgEl.textContent = 'Error: ' + (e.message || 'Failed to dispatch report.');
+        const localEntry = {
+          timestamp: new Date().toISOString(),
+          plant: plant === '*' ? 'All Plants' : plant,
+          month: monthLabel,
+          to: testEmail || 'Configured Routes',
+          cc: '',
+          totalLeaks: 0,
+          status: 'ERROR',
+          reason: e.message || 'Dispatch failed'
+        };
+        saveLocalEmailLog(localEntry);
+        msgEl.style.background = '#fef2f2';
+        msgEl.style.color = '#991b1b';
+        msgEl.innerHTML = `<b>Error:</b> ${e.message || 'Failed to dispatch report.'}<br><span style="font-size:11px;">Please verify your Google Apps Script deployment. You can still preview full reports on-screen via <b>Preview</b>.</span>`;
+        loadEmailActivityLogs();
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -2616,12 +3028,20 @@ async function protectedExportToExcel(type) {
       }
     }
 
+    function saveLocalEmailLog(entry) {
+      try {
+        const logs = JSON.parse(localStorage.getItem('ac_leakage_email_logs') || '[]');
+        logs.unshift(entry);
+        localStorage.setItem('ac_leakage_email_logs', JSON.stringify(logs.slice(0, 50)));
+      } catch (e) {}
+    }
+
     async function installAppsScriptMonthlyTrigger() {
       try {
         const res = await otpRequest('setupMonthlyTrigger', {});
         showNotice(res.message || 'Apps Script monthly trigger active for 1st of every month.', 'success');
       } catch (e) {
-        showNotice('Failed to install Apps Script trigger: ' + (e.message || 'Check deployment.'), 'error');
+        showNotice('Apps Script trigger: ' + (e.message || 'Please redeploy Apps Script.'), 'info');
       }
     }
 
@@ -2659,34 +3079,68 @@ async function protectedExportToExcel(type) {
       return values.reduce((a, b) => a + (Number(b) || 0), 0);
     }
 
-    function pieLabelFormatter_(value, ctx) {
-      const total = pieTotal_(ctx);
-      if (!total) return '';
-      const pct = ((Number(value || 0) / total) * 100);
-      // Keep tiny slices compact so they don't collide.
-      if (pct < 3) return `${value}`;
-      return `${value}\n${pct.toFixed(1)}%`;
-    }
-
-    function tinySliceRank_(ctx, thresholdPct) {
-      const chart = (ctx && ctx.chart) || null;
-      const ds = (chart && chart.data && chart.data.datasets && chart.data.datasets[0]) || null;
-      const data = (ds && ds.data) || [];
-      const total = data.reduce((a, b) => a + (Number(b) || 0), 0);
-      if (!total) return 0;
-      const tinyIndexes = data
-        .map((v, i) => ({ i, pct: ((Number(v) || 0) / total) * 100 }))
-        .filter((x) => x.pct > 0 && x.pct < thresholdPct)
-        .map((x) => x.i);
-      return Math.max(0, tinyIndexes.indexOf(ctx.dataIndex));
-    }
-
     function shortTickLabel_(label, maxLen) {
       const txt = String(label || '').replace(/\s+/g, ' ').trim();
       if (txt.length <= maxLen) return txt;
       return `${txt.slice(0, Math.max(1, maxLen - 1))}\u2026`;
     }
 
+    function populateChartsPeriodSelect() {
+      const select = document.getElementById('chartsPeriodSelect');
+      if (!select) return;
+      if (select.dataset.populated === 'true') return;
+      select.dataset.populated = 'true';
+      const currentVal = select.value || 'all';
+      select.innerHTML = '<option value="all">All Time (Complete History)</option>';
+
+      const now = new Date();
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+      for (let i = 0; i < 18; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const yr = d.getFullYear();
+        const mo = d.getMonth();
+        const val = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+        const label = `${monthNames[mo]} ${yr}`;
+        const opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = label;
+        select.appendChild(opt);
+      }
+      select.value = currentVal;
+    }
+
+    function getChartsFilteredData() {
+      const data = getFilteredData();
+      const select = document.getElementById('chartsPeriodSelect');
+      const val = select ? select.value : 'all';
+      if (!val || val === 'all') {
+        return data;
+      }
+      const parts = val.split('-');
+      const yr = parseInt(parts[0], 10);
+      const mo = parseInt(parts[1], 10) - 1;
+      return data.filter(d => {
+        const ts = toDate(d.timestamp);
+        return ts && ts.getFullYear() === yr && ts.getMonth() === mo;
+      });
+    }
+
+    function getSelectedChartsPeriodLabel() {
+      const select = document.getElementById('chartsPeriodSelect');
+      if (!select || select.value === 'all') return 'All Time';
+      const opt = select.options[select.selectedIndex];
+      return opt ? opt.textContent : 'All Time';
+    }
+
+    function onChartsPeriodChange() {
+      updatePlantChart();
+      updateDefectChart();
+      updateSeverityChart();
+      updateActionChart();
+      updateJointCharts();
+      updateLineComparisonChart();
+    }
 
     function initCharts() {
       destroyAllCharts();
@@ -2695,7 +3149,7 @@ async function protectedExportToExcel(type) {
         window.__acLeakageChartDlReg = true;
       }
 
-      // Plant Distribution
+      // Plant Distribution (Doughnut with clean non-overlapping labels)
       const plantCtx = document.getElementById('plantChart').getContext('2d');
       dashboardCharts.plant = new Chart(plantCtx, {
         type: 'doughnut',
@@ -2703,90 +3157,72 @@ async function protectedExportToExcel(type) {
           labels: [], 
           datasets:[{ 
             data: [], 
-            backgroundColor: ['#B3B7F5','#BBA5D1','#F8C9FD','#A1D2FA','#F7B680'] 
+            backgroundColor: ['#B3B7F5','#BBA5D1','#F8C9FD','#A1D2FA','#F7B680','#FED7AA','#C7D2FE'] 
           }] 
         },
         options: {
-          responsive:true, 
-          maintainAspectRatio:false,
+          responsive: true, 
+          maintainAspectRatio: false,
+          cutout: '58%',
           plugins: {
-            legend: { position:'bottom', labels: { font: { size: 12 } } },
-datalabels: {
-              color: '#000',
+            legend: { position:'bottom', labels: { font: { size: 11 } } },
+            datalabels: {
+              color: '#1e293b',
               formatter: (value, ctx) => {
-                const sum = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
-                const percentage = sum ? ((value/sum*100).toFixed(1) + '%') : '';
-                const pct = sum ? ((value / sum) * 100) : 0;
-                // Very tiny slices: keep compact text in donut center area.
-                if (pct < 2) return `${value}`;
-                return value + '\n' + percentage;
+                const sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                const percentage = sum ? ((value / sum * 100).toFixed(1) + '%') : '';
+                return value + '\n(' + percentage + ')';
               },
-              font: { weight: '700', size: 14 },
+              font: { weight: '700', size: 11 },
               textAlign: 'center',
-              anchor: (ctx) => {
-                const total = pieTotal_(ctx);
-                const value = Number((((ctx || {}).dataset || {}).data || [])[ctx.dataIndex] || 0);
-                if (!total) return 'center';
-                const pct = ((value / total) * 100);
-                // Keep tiny labels attached to inner edge of colored ring.
-                return pct < 2 ? 'center' : 'center';
+              display: (ctx) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                const val = ctx.dataset.data[ctx.dataIndex] || 0;
+                return sum ? ((val / sum) * 100) >= 4.0 : false;
               },
-              align: (ctx) => {
-                const total = pieTotal_(ctx);
-                const value = Number((((ctx || {}).dataset || {}).data || [])[ctx.dataIndex] || 0);
-                if (!total) return 'center';
-                const pct = ((value / total) * 100);
-                if (pct < 2) return 'start'; // move inward to white donut area
-                return 'center';
-              },
-              offset: (ctx) => {
-                const total = pieTotal_(ctx);
-                const value = Number((((ctx || {}).dataset || {}).data || [])[ctx.dataIndex] || 0);
-                if (!total) return 0;
-                const pct = ((value / total) * 100);
-                if (pct < 2) return 18;
-                return 0;
-              },
-              display: true,
-              clamp: true,
-              clip: false
-            }
-          }
-        }
-      });
-
-      // Defect Type
-      const defectCtx = document.getElementById('defectChart').getContext('2d');
-      dashboardCharts.defect = new Chart(defectCtx, {
-        type: 'pie',
-        data: { 
-          labels: [], 
-datasets:[{ 
-            data: [], 
-            backgroundColor: ['#FFB5B5','#A7E6E2','#D4A5F5','#FFD0BD','#CCECE4','#FBEEB7'] 
-          }] 
-        },
-        options: {
-          responsive:true, 
-          maintainAspectRatio:false,
-          plugins: {
-            legend: { position:'bottom', labels: { font: { size: 12 } } },
-datalabels: {
-              color: '#000',
-              formatter: (value, ctx) => {
-                const sum = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
-                const percentage = sum ? ((value/sum*100).toFixed(1) + '%') : '';
-                return value + '\n' + percentage; // Show count + percentage
-              },
-              font: { weight: '700', size: 14 },
-              textAlign: 'center',
               clamp: true
             }
           }
         }
       });
 
-      // Shift-wise
+      // Defect Type (Pie with clean non-overlapping labels)
+      const defectCtx = document.getElementById('defectChart').getContext('2d');
+      dashboardCharts.defect = new Chart(defectCtx, {
+        type: 'pie',
+        data: { 
+          labels: [], 
+          datasets:[{ 
+            data: [], 
+            backgroundColor: ['#FFB5B5','#A7E6E2','#D4A5F5','#FFD0BD','#CCECE4','#FBEEB7','#C4B5FD'] 
+          }] 
+        },
+        options: {
+          responsive: true, 
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position:'bottom', labels: { font: { size: 11 } } },
+            datalabels: {
+              color: '#1e293b',
+              formatter: (value, ctx) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                const percentage = sum ? ((value / sum * 100).toFixed(1) + '%') : '';
+                return value + '\n(' + percentage + ')';
+              },
+              font: { weight: '700', size: 11 },
+              textAlign: 'center',
+              display: (ctx) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                const val = ctx.dataset.data[ctx.dataIndex] || 0;
+                return sum ? ((val / sum) * 100) >= 3.5 : false;
+              },
+              clamp: true
+            }
+          }
+        }
+      });
+
+      // Shift-wise (Doughnut)
       const severityCtx = document.getElementById('severityChart').getContext('2d');
       dashboardCharts.severity = new Chart(severityCtx, {
         type: 'doughnut',
@@ -2794,27 +3230,36 @@ datalabels: {
           labels: [], 
           datasets:[{ 
             data: [], 
-            backgroundColor: ['#FFB59A','#80A7C4','#8DB2CF'] 
+            backgroundColor: ['#FFB59A','#80A7C4','#8DB2CF','#B0C4DE'] 
           }] 
         },
         options: {
-          responsive:true, 
-          maintainAspectRatio:false,
+          responsive: true, 
+          maintainAspectRatio: false,
+          cutout: '58%',
           plugins: {
-            legend: { position:'bottom', labels: { font: { size: 12 } } },
-datalabels: {
-              color: '#000',
+            legend: { position:'bottom', labels: { font: { size: 11 } } },
+            datalabels: {
+              color: '#1e293b',
               formatter: (value, ctx) => {
-                const sum = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
-                return sum ? ((value/sum*100).toFixed(1) + '%') : '';
+                const sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                const percentage = sum ? ((value / sum * 100).toFixed(1) + '%') : '';
+                return value + '\n(' + percentage + ')';
               },
-              font: { weight: '700', size: 14 }
+              font: { weight: '700', size: 11 },
+              textAlign: 'center',
+              display: (ctx) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                const val = ctx.dataset.data[ctx.dataIndex] || 0;
+                return sum ? ((val / sum) * 100) >= 4.0 : false;
+              },
+              clamp: true
             }
           }
         }
       });
 
-      // Action
+      // Action (Pie)
       const actionCtx = document.getElementById('actionChart').getContext('2d');
       dashboardCharts.action = new Chart(actionCtx, {
         type: 'pie',
@@ -2826,17 +3271,25 @@ datalabels: {
           }] 
         },
         options: {
-          responsive:true, 
-          maintainAspectRatio:false,
+          responsive: true, 
+          maintainAspectRatio: false,
           plugins: {
-            legend: { position:'bottom', labels: { font: { size: 12 } } },
-datalabels: {
-              color: '#000',
+            legend: { position:'bottom', labels: { font: { size: 11 } } },
+            datalabels: {
+              color: '#1e293b',
               formatter: (value, ctx) => {
-                const sum = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
-                return sum ? ((value/sum*100).toFixed(1) + '%') : '';
+                const sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                const percentage = sum ? ((value / sum * 100).toFixed(1) + '%') : '';
+                return value + '\n(' + percentage + ')';
               },
-              font: { weight: '700', size: 14 }
+              font: { weight: '700', size: 11 },
+              textAlign: 'center',
+              display: (ctx) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                const val = ctx.dataset.data[ctx.dataIndex] || 0;
+                return sum ? ((val / sum) * 100) >= 3.5 : false;
+              },
+              clamp: true
             }
           }
         }
@@ -3275,6 +3728,7 @@ backgroundColor: '#ADB5E0',
     }
 
     function refreshUI() {
+      populateChartsPeriodSelect();
       updateStats();
       updateTrendChart();
       updatePlantChart();
@@ -3530,7 +3984,11 @@ function updateStats() {
     }
 
     function updatePlantChart() {
-      const data = getFilteredData();
+      const data = getChartsFilteredData();
+      const periodLabel = getSelectedChartsPeriodLabel();
+      const titleEl = document.getElementById('plantDistTitle');
+      if (titleEl) titleEl.textContent = `🏭 Plant Distribution (${periodLabel})`;
+
       const counts = {};
       data.forEach(d => {
         const p = d.plant || 'Unknown';
@@ -3546,7 +4004,11 @@ function updateStats() {
     }
 
     function updateDefectChart() {
-      const data = getFilteredData();
+      const data = getChartsFilteredData();
+      const periodLabel = getSelectedChartsPeriodLabel();
+      const titleEl = document.getElementById('defectDistTitle');
+      if (titleEl) titleEl.textContent = `🔍 Defect Type Distribution (${periodLabel})`;
+
       const counts = {};
       data.forEach(d => {
         const defect = d.defectType || 'Unknown';
@@ -3562,7 +4024,11 @@ function updateStats() {
     }
 
     function updateSeverityChart() {
-      const data = getFilteredData();
+      const data = getChartsFilteredData();
+      const periodLabel = getSelectedChartsPeriodLabel();
+      const titleEl = document.getElementById('shiftDistTitle');
+      if (titleEl) titleEl.textContent = `🌅 Shift-wise Contribution (${periodLabel})`;
+
       const counts = {};
       data.forEach(d => {
         const shift = d.shift || 'Unknown';
@@ -3578,7 +4044,11 @@ function updateStats() {
     }
 
     function updateActionChart() {
-      const data = getFilteredData();
+      const data = getChartsFilteredData();
+      const periodLabel = getSelectedChartsPeriodLabel();
+      const titleEl = document.getElementById('actionDistTitle');
+      if (titleEl) titleEl.textContent = `✅ Action Distribution (${periodLabel})`;
+
       const counts = {};
       data.forEach(d => {
         const action = d.action || 'Unknown';
@@ -3594,7 +4064,7 @@ function updateStats() {
     }
 
     function aggregateJointLeakages(unitType) {
-      const data = getFilteredData();
+      const data = getChartsFilteredData();
       const counts = {};
       data.filter(d => d.type === unitType).forEach(d => {
         const j = d.joint || 'Unknown';
@@ -3619,83 +4089,72 @@ function updateStats() {
       };
     }
 
-function updateJointCharts() {
-  const data = getFilteredData();
-  const anchor = getEffectiveAnchorDate();
-  const currentMonthName = monthLabel(anchor);
-  document.getElementById('iduJointTitle').textContent = `🔩 Indoor Joint Pareto (${currentMonthName})`;
-  document.getElementById('oduJointTitle').textContent = `🔩 Outdoor Joint Pareto (${currentMonthName})`;
-  
-  const currentYear = anchor.getFullYear();
-  const currentMonth = anchor.getMonth();
-  
-  const currentMonthData = data.filter(d => {
-    const ts = toDate(d.timestamp);
-    if (!ts) return false;
-    return ts.getFullYear() === currentYear && ts.getMonth() === currentMonth;
-  });
-  
-  const aggregateCurrentMonth = (unitType) => {
-    const counts = {};
-    
-    // TRY MULTIPLE FIELD NAMES FOR UNIT TYPE
-    const filtered = currentMonthData.filter(d => {
-      const type = d.type || d.unit || d.unitType || d.location || '';
+    function updateJointCharts() {
+      const data = getChartsFilteredData();
+      const periodLabel = getSelectedChartsPeriodLabel();
+      const iduTitleEl = document.getElementById('iduJointTitle');
+      const oduTitleEl = document.getElementById('oduJointTitle');
+      if (iduTitleEl) iduTitleEl.textContent = `🔩 Indoor Joint Pareto (${periodLabel})`;
+      if (oduTitleEl) oduTitleEl.textContent = `🔩 Outdoor Joint Pareto (${periodLabel})`;
       
-      if (unitType === 'IDU') {
-        return type === 'IDU' || type === 'Indoor' || type === 'indoor' || 
-               type === 'idu' || type.includes('Indoor') || type.includes('IDU');
-      } else {
-        return type === 'ODU' || type === 'Outdoor' || type === 'outdoor' || 
-               type === 'odu' || type.includes('Outdoor') || type.includes('ODU');
-      }
-    });
-    
-    // TRY MULTIPLE FIELD NAMES FOR JOINT
-    filtered.forEach(d => {
-      const joint = d.joint || d.jointNo || d.joint_no || d.jointNumber || 
-                    d.location || d.area || d.position || 'Unknown';
-      counts[joint] = (counts[joint] || 0) + reportQuantity(d);
-    });
-    
-    const sorted = Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-    
-    const labels = sorted.map(x => x[0]);
-    const values = sorted.map(x => x[1]);
-    
-    let cumulative = [];
-    const total = values.reduce((a, b) => a + b, 0);
-    let sum = 0;
-    values.forEach(v => {
-      sum += v;
-      cumulative.push(total > 0 ? (sum / total * 100) : 0);
-    });
-    
-    return { labels, values, cumulative };
-  };
-  
-  const idu = aggregateCurrentMonth('IDU');
-  const iduMaxValue = Math.max(...idu.values, 1);
-  const iduScaleMax = Math.ceil(iduMaxValue * 1.2) || 10;
-  
-  dashboardCharts.idu.data.labels = idu.labels;
-  dashboardCharts.idu.data.datasets[0].data = idu.values;
-  dashboardCharts.idu.data.datasets[1].data = idu.cumulative;
-  dashboardCharts.idu.options.scales.y.max = iduScaleMax;
-  dashboardCharts.idu.update();
-  
-  const odu = aggregateCurrentMonth('ODU');
-  const oduMaxValue = Math.max(...odu.values, 1);
-  const oduScaleMax = Math.ceil(oduMaxValue * 1.2) || 10;
-  
-  dashboardCharts.odu.data.labels = odu.labels;
-  dashboardCharts.odu.data.datasets[0].data = odu.values;
-  dashboardCharts.odu.data.datasets[1].data = odu.cumulative;
-  dashboardCharts.odu.options.scales.y.max = oduScaleMax;
-  dashboardCharts.odu.update();
-}
+      const aggregatePeriodData = (unitType) => {
+        const counts = {};
+        
+        const filtered = data.filter(d => {
+          const type = d.type || d.unit || d.unitType || d.location || '';
+          if (unitType === 'IDU') {
+            return type === 'IDU' || type === 'Indoor' || type === 'indoor' || 
+                   type === 'idu' || type.includes('Indoor') || type.includes('IDU');
+          } else {
+            return type === 'ODU' || type === 'Outdoor' || type === 'outdoor' || 
+                   type === 'odu' || type.includes('Outdoor') || type.includes('ODU');
+          }
+        });
+        
+        filtered.forEach(d => {
+          const joint = d.joint || d.jointNo || d.joint_no || d.jointNumber || 
+                        d.location || d.area || d.position || 'Unknown';
+          counts[joint] = (counts[joint] || 0) + reportQuantity(d);
+        });
+        
+        const sorted = Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5);
+        
+        const labels = sorted.map(x => x[0]);
+        const values = sorted.map(x => x[1]);
+        
+        let cumulative = [];
+        const total = values.reduce((a, b) => a + b, 0);
+        let sum = 0;
+        values.forEach(v => {
+          sum += v;
+          cumulative.push(total > 0 ? (sum / total * 100) : 0);
+        });
+        
+        return { labels, values, cumulative };
+      };
+      
+      const idu = aggregatePeriodData('IDU');
+      const iduMaxValue = Math.max(...idu.values, 1);
+      const iduScaleMax = Math.ceil(iduMaxValue * 1.2) || 10;
+      
+      dashboardCharts.idu.data.labels = idu.labels;
+      dashboardCharts.idu.data.datasets[0].data = idu.values;
+      dashboardCharts.idu.data.datasets[1].data = idu.cumulative;
+      dashboardCharts.idu.options.scales.y.max = iduScaleMax;
+      dashboardCharts.idu.update();
+      
+      const odu = aggregatePeriodData('ODU');
+      const oduMaxValue = Math.max(...odu.values, 1);
+      const oduScaleMax = Math.ceil(oduMaxValue * 1.2) || 10;
+      
+      dashboardCharts.odu.data.labels = odu.labels;
+      dashboardCharts.odu.data.datasets[0].data = odu.values;
+      dashboardCharts.odu.data.datasets[1].data = odu.cumulative;
+      dashboardCharts.odu.options.scales.y.max = oduScaleMax;
+      dashboardCharts.odu.update();
+    }
 
     function updateSixMonthTrendChart() {
       const data = getFilteredData();
@@ -3705,27 +4164,23 @@ function updateJointCharts() {
       
       const counts = months.map((month, index) => {
         const monthStart = new Date(month);
-        monthStart.setHours(0, 0, 0, 0); // Start of month
+        monthStart.setHours(0, 0, 0, 0);
         
         let monthEnd;
         const isCurrentMonth = (index === months.length - 1);
         
         if (isCurrentMonth) {
-          // For current month: count up to NOW (not end of month)
           monthEnd = new Date(now);
         } else {
-          // For past months: count full month
           monthEnd = new Date(month);
           monthEnd.setMonth(monthEnd.getMonth() + 1);
           monthEnd.setHours(0, 0, 0, 0);
         }
         
-        const monthLabel = labels[index];
         const count = sumQuantities(data.filter(item => {
           const ts = toDate(item.timestamp);
           if (!ts) return false;
-          const inRange = ts >= monthStart && ts <= monthEnd;
-          return inRange;
+          return ts >= monthStart && ts <= monthEnd;
         }));
         return count;
       });
@@ -3768,7 +4223,11 @@ function updateJointCharts() {
     }
 
     function updateLineComparisonChart() {
-      const data = getFilteredData();
+      const data = getChartsFilteredData();
+      const periodLabel = getSelectedChartsPeriodLabel();
+      const titleEl = document.getElementById('lineCompTitle');
+      if (titleEl) titleEl.textContent = `📊 Production Line Comparison (${periodLabel})`;
+
       const counts = {};
       data.forEach(d => {
         const line = d.productionLine || 'Unknown';

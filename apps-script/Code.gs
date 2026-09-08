@@ -1033,6 +1033,8 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
   const defectCounts = {};
   const lineCounts = {};
   const shiftCounts = {};
+  const unitCounts = {};
+  const jointCounts = {};
 
   records.forEach(function(r) {
     const qty = Number(r.quantity) > 0 ? Number(r.quantity) : 1;
@@ -1054,10 +1056,22 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
 
     const shift = String(r.shift || 'General').trim();
     shiftCounts[shift] = (shiftCounts[shift] || 0) + qty;
+
+    const unit = String(r.type || r.unitType || r.unit || 'Other').trim();
+    unitCounts[unit] = (unitCounts[unit] || 0) + qty;
+
+    const joint = String(r.joint || r.jointNo || '').trim();
+    if (joint) {
+      jointCounts[joint] = (jointCounts[joint] || 0) + qty;
+    }
   });
 
   const sortedDefects = Object.keys(defectCounts).map(function(k) {
     return { name: k, count: defectCounts[k], pct: totalLeaks > 0 ? Math.round((defectCounts[k] / totalLeaks) * 100) : 0 };
+  }).sort(function(a, b) { return b.count - a.count; });
+
+  const sortedUnits = Object.keys(unitCounts).map(function(k) {
+    return { name: k, count: unitCounts[k], pct: totalLeaks > 0 ? Math.round((unitCounts[k] / totalLeaks) * 100) : 0 };
   }).sort(function(a, b) { return b.count - a.count; });
 
   const sortedLines = Object.keys(lineCounts).map(function(k) {
@@ -1067,6 +1081,10 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
   const sortedShifts = Object.keys(shiftCounts).map(function(k) {
     return { name: k, count: shiftCounts[k] };
   }).sort(function(a, b) { return b.count - a.count; });
+
+  const sortedJoints = Object.keys(jointCounts).map(function(k) {
+    return { name: k, count: jointCounts[k] };
+  }).sort(function(a, b) { return b.count - a.count; }).slice(0, 5);
 
   let defectRowsHtml = '';
   if (sortedDefects.length === 0) {
@@ -1084,6 +1102,29 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
         '        <div style="background:' + barColor + ';width:' + Math.min(100, d.pct) + '%;height:8px;border-radius:999px;"></div>',
         '      </div>',
         '      <span style="font-size:11px;font-weight:700;color:#475569;width:32px;text-align:right;">' + d.pct + '%</span>',
+        '    </div>',
+        '  </td>',
+        '</tr>'
+      ].join('');
+    });
+  }
+
+  let unitRowsHtml = '';
+  if (sortedUnits.length === 0) {
+    unitRowsHtml = '<tr><td colspan="3" style="padding:12px;text-align:center;color:#64748b;">No unit data recorded.</td></tr>';
+  } else {
+    sortedUnits.forEach(function(u, idx) {
+      const barColor = idx === 0 ? '#10b981' : idx === 1 ? '#3b82f6' : '#8b5cf6';
+      unitRowsHtml += [
+        '<tr style="border-bottom:1px solid #f1f5f9;">',
+        '  <td style="padding:9px 12px;color:#1e293b;font-weight:600;font-size:13px;">' + u.name + '</td>',
+        '  <td style="padding:9px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">' + u.count + '</td>',
+        '  <td style="padding:9px 12px;width:120px;">',
+        '    <div style="display:flex;align-items:center;gap:6px;">',
+        '      <div style="flex:1;background:#e2e8f0;border-radius:999px;height:7px;overflow:hidden;">',
+        '        <div style="background:' + barColor + ';width:' + Math.min(100, u.pct) + '%;height:7px;border-radius:999px;"></div>',
+        '      </div>',
+        '      <span style="font-size:11px;font-weight:700;color:#475569;width:30px;text-align:right;">' + u.pct + '%</span>',
         '    </div>',
         '  </td>',
         '</tr>'
@@ -1119,26 +1160,38 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
     });
   }
 
+  let jointRowsHtml = '';
+  if (sortedJoints.length > 0) {
+    sortedJoints.forEach(function(j) {
+      jointRowsHtml += [
+        '<tr style="border-bottom:1px solid #f1f5f9;">',
+        '  <td style="padding:8px 12px;color:#334155;font-weight:600;font-size:12px;">' + j.name + '</td>',
+        '  <td style="padding:8px 12px;text-align:right;font-weight:700;color:#dc2626;font-size:12px;">' + j.count + '</td>',
+        '</tr>'
+      ].join('');
+    });
+  }
+
   const generatedDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata', 'dd MMM yyyy, hh:mm a');
 
   return [
     '<!DOCTYPE html>',
     '<html>',
     '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>',
-    '<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">',
-    '  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f1f5f9;padding:24px 0;">',
+    '<body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;">',
+    '  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;padding:24px 0;">',
     '    <tr>',
     '      <td align="center">',
-    '        <table role="presentation" width="100%" style="max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,0.08);border:1px solid #e2e8f0;" cellspacing="0" cellpadding="0">',
+    '        <table role="presentation" width="100%" style="max-width:680px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);border:1px solid #e2e8f0;" cellspacing="0" cellpadding="0">',
     '          ',
     '          <!-- Header Banner -->',
     '          <tr>',
-    '            <td style="background:linear-gradient(135deg, #0f172a 0%, #1e1b4b 60%, #312e81 100%);padding:28px 24px;text-align:left;color:#ffffff;">',
-    '              <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#818cf8;margin-bottom:6px;">PG ELECTROPLAST LIMITED</div>',
-    '              <h1 style="margin:0 0 12px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">Monthly AC Leakage Performance Report</h1>',
-    '              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">',
-    '                <span style="display:inline-block;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:4px 12px;font-size:12px;font-weight:700;color:#e0e7ff;margin-right:6px;">🏢 Plant: ' + plantName + '</span>',
-    '                <span style="display:inline-block;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:4px 12px;font-size:12px;font-weight:700;color:#e0e7ff;">📅 Period: ' + monthLabel + '</span>',
+    '            <td style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);padding:28px 24px;text-align:left;color:#ffffff;border-bottom:3px solid #3b82f6;">',
+    '              <div style="font-size:11px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">PG ELECTROPLAST LIMITED</div>',
+    '              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">Monthly AC Leakage Quality Report</h1>',
+    '              <div style="display:block;margin-top:10px;">',
+    '                <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">PLANT:</b> ' + plantName + '</span>',
+    '                <span style="display:inline-block;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ' + monthLabel + '</span>',
     '              </div>',
     '            </td>',
     '          </tr>',
@@ -1148,76 +1201,93 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
     '            <td style="padding:24px;">',
     '              ',
     '              <!-- Executive Summary Callout -->',
-    '              <div style="background:#f8fafc;border-left:4px solid #4f46e5;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:24px;">',
-    '                <p style="margin:0;font-size:13px;color:#334155;line-height:1.5;">',
-    '                  Summary for <b>' + plantName + '</b> during <b>' + monthLabel + '</b>. Total of <b>' + totalLeaks + '</b> leakage defect(s) logged across all lines.',
+    '              <div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:22px;">',
+    '                <p style="margin:0;font-size:13px;color:#334155;line-height:1.6;">',
+    '                  Performance overview for <b>' + plantName + '</b> during <b>' + monthLabel + '</b>. Total of <b>' + totalLeaks + '</b> leakage defect(s) logged across all production lines and shifts.',
     '                </p>',
     '              </div>',
     '              ',
     '              <!-- KPI Metric Cards Grid (6 cards) -->',
-    '              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">',
+    '              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:22px;">',
     '                <tr>',
     '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:14px 10px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#4338ca;text-transform:uppercase;">Total Leaks</div>',
-    '                      <div style="font-size:26px;font-weight:900;color:#1e1b4b;margin-top:4px;">' + totalLeaks + '</div>',
+    '                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '                      <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;">TOTAL LEAKS</div>',
+    '                      <div style="font-size:24px;font-weight:900;color:#1e3a8a;margin-top:2px;">' + totalLeaks + '</div>',
     '                    </div>',
     '                  </td>',
     '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 10px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#b91c1c;text-transform:uppercase;">Critical</div>',
-    '                      <div style="font-size:26px;font-weight:900;color:#991b1b;margin-top:4px;">' + criticalCount + '</div>',
+    '                    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '                      <div style="font-size:11px;font-weight:700;color:#b91c1c;text-transform:uppercase;">CRITICAL</div>',
+    '                      <div style="font-size:24px;font-weight:900;color:#991b1b;margin-top:2px;">' + criticalCount + '</div>',
     '                    </div>',
     '                  </td>',
     '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:14px 10px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#c2410c;text-transform:uppercase;">Major</div>',
-    '                      <div style="font-size:26px;font-weight:900;color:#9a3412;margin-top:4px;">' + majorCount + '</div>',
+    '                    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '                      <div style="font-size:11px;font-weight:700;color:#c2410c;text-transform:uppercase;">MAJOR</div>',
+    '                      <div style="font-size:24px;font-weight:900;color:#9a3412;margin-top:2px;">' + majorCount + '</div>',
     '                    </div>',
     '                  </td>',
     '                </tr>',
     '                <tr>',
     '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 10px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;">Minor</div>',
-    '                      <div style="font-size:26px;font-weight:900;color:#166534;margin-top:4px;">' + minorCount + '</div>',
+    '                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '                      <div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;">MINOR</div>',
+    '                      <div style="font-size:24px;font-weight:900;color:#166534;margin-top:2px;">' + minorCount + '</div>',
     '                    </div>',
     '                  </td>',
     '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#fefce8;border:1px solid #fef08a;border-radius:10px;padding:14px 10px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#a16207;text-transform:uppercase;">Rework</div>',
-    '                      <div style="font-size:26px;font-weight:900;color:#854d0e;margin-top:4px;">' + reworkCount + '</div>',
+    '                    <div style="background:#fefce8;border:1px solid #fef08a;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '                      <div style="font-size:11px;font-weight:700;color:#a16207;text-transform:uppercase;">REWORK</div>',
+    '                      <div style="font-size:24px;font-weight:900;color:#854d0e;margin-top:2px;">' + reworkCount + '</div>',
     '                    </div>',
     '                  </td>',
     '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:14px 10px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#be185d;text-transform:uppercase;">Scrap</div>',
-    '                      <div style="font-size:26px;font-weight:900;color:#9d174d;margin-top:4px;">' + scrapCount + '</div>',
+    '                    <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '                      <div style="font-size:11px;font-weight:700;color:#be185d;text-transform:uppercase;">SCRAP</div>',
+    '                      <div style="font-size:24px;font-weight:900;color:#9d174d;margin-top:2px;">' + scrapCount + '</div>',
     '                    </div>',
     '                  </td>',
     '                </tr>',
     '              </table>',
     '              ',
-    '              <!-- Top Defect Types Table -->',
-    '              <div style="margin-bottom:24px;">',
-    '                <div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:10px;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">📊 Defect Categories Breakdown</div>',
-    '                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
-    '                  <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
-    '                    <tr>',
-    '                      <th style="padding:10px 12px;text-align:left;">Defect Category</th>',
-    '                      <th style="padding:10px 12px;text-align:center;">Count</th>',
-    '                      <th style="padding:10px 12px;text-align:left;">Share</th>',
-    '                    </tr>',
-    '                  </thead>',
-    '                  <tbody>' + defectRowsHtml + '</tbody>',
-    '                </table>',
-    '              </div>',
+    '              <!-- Unit Type & Defect Breakdown (Two Columns) -->',
+    '              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:22px;">',
+    '                <tr>',
+    '                  <td width="50%" valign="top" style="padding-right:8px;">',
+    '                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Unit Type Breakdown</div>',
+    '                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
+    '                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
+    '                        <tr>',
+    '                          <th style="padding:8px 10px;text-align:left;">Unit Type</th>',
+    '                          <th style="padding:8px 6px;text-align:center;">Count</th>',
+    '                          <th style="padding:8px 10px;text-align:left;">Share</th>',
+    '                        </tr>',
+    '                      </thead>',
+    '                      <tbody>' + unitRowsHtml + '</tbody>',
+    '                    </table>',
+    '                  </td>',
+    '                  <td width="50%" valign="top" style="padding-left:8px;">',
+    '                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Defect Categories</div>',
+    '                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
+    '                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
+    '                        <tr>',
+    '                          <th style="padding:8px 10px;text-align:left;">Category</th>',
+    '                          <th style="padding:8px 6px;text-align:center;">Count</th>',
+    '                          <th style="padding:8px 10px;text-align:left;">Share</th>',
+    '                        </tr>',
+    '                      </thead>',
+    '                      <tbody>' + defectRowsHtml + '</tbody>',
+    '                    </table>',
+    '                  </td>',
+    '                </tr>',
+    '              </table>',
     '              ',
     '              <!-- Line Breakdown & Shift Tables (Two Columns) -->',
     '              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:20px;">',
     '                <tr>',
     '                  <td width="50%" valign="top" style="padding-right:8px;">',
-    '                    <div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:10px;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">🏭 Line Breakdown</div>',
+    '                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Line Breakdown</div>',
     '                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
     '                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
     '                        <tr>',
@@ -1229,7 +1299,7 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
     '                    </table>',
     '                  </td>',
     '                  <td width="50%" valign="top" style="padding-left:8px;">',
-    '                    <div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:10px;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">⏱️ Shift Distribution</div>',
+    '                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Shift Distribution</div>',
     '                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
     '                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
     '                        <tr>',
@@ -1243,10 +1313,26 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
     '                </tr>',
     '              </table>',
     '              ',
+    '              ' + (jointRowsHtml ? [
+      '              <!-- Top Joint Leakage Points -->',
+      '              <div style="margin-bottom:20px;">',
+      '                <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Top Leakage Joints</div>',
+      '                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
+      '                  <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
+      '                    <tr>',
+      '                      <th style="padding:8px 12px;text-align:left;">Joint / Location</th>',
+      '                      <th style="padding:8px 12px;text-align:right;">Leak Frequency</th>',
+      '                    </tr>',
+      '                  </thead>',
+      '                  <tbody>' + jointRowsHtml + '</tbody>',
+      '                </table>',
+      '              </div>'
+    ].join('') : '') + '',
+    '              ',
     '              <!-- PROMINENT AUTO-GENERATED DISCLAIMER -->',
-    '              <div style="margin-top:24px;padding:14px 18px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;color:#991b1b;font-size:12px;line-height:1.5;">',
-    '                <div style="font-weight:800;font-size:13px;margin-bottom:4px;">⚠️ Auto-Generated Report Notice</div>',
-    '                <div>This is an <b>auto-generated report</b> produced by the <b>PG AC Leakage Monitoring System</b>. Please do not reply directly to this email. For any queries, discrepancies, or access management, please contact your Quality Team or IT Admin.</div>',
+    '              <div style="margin-top:24px;padding:14px 18px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:12px;line-height:1.5;">',
+    '                <div style="font-weight:800;font-size:12px;margin-bottom:4px;letter-spacing:0.5px;">[ AUTOMATED REPORT NOTICE ]</div>',
+    '                <div>This is an <b>auto-generated report</b> produced by the <b>PG Electroplast AC Leakage Monitoring System</b>. Please do not reply directly to this email. For any queries, discrepancies, or routing changes, please contact the Quality Team or IT Admin.</div>',
     '              </div>',
     '              ',
     '            </td>',
@@ -1255,7 +1341,7 @@ function buildMonthlyReportHtml_(plantName, monthLabel, records, totalLeaks) {
     '          <!-- Footer -->',
     '          <tr>',
     '            <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 24px;text-align:center;font-size:11px;color:#64748b;">',
-    '              Generated on ' + generatedDate + ' • AC Leakage Monitoring Portal • PG Electroplast Limited',
+    '              Generated on ' + generatedDate + ' | AC Leakage Monitoring Portal | PG Electroplast Limited',
     '            </td>',
     '          </tr>',
     '          ',
