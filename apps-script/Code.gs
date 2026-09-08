@@ -171,7 +171,7 @@ function normalizeEmailList_(input) {
     .filter(Boolean);
 }
 
-function sendSystemEmail_(toEmails, ccEmails, subject, htmlBody, plainBody) {
+function sendSystemEmail_(toEmails, ccEmails, subject, htmlBody, plainBody, attachments) {
   const sender = getOtpSender_();
   const toList = normalizeEmailList_(toEmails);
   const ccList = normalizeEmailList_(ccEmails);
@@ -191,6 +191,7 @@ function sendSystemEmail_(toEmails, ccEmails, subject, htmlBody, plainBody) {
     from: sender.email
   };
   if (ccStr) mailOpts.cc = ccStr;
+  if (attachments && attachments.length) mailOpts.attachments = attachments;
 
   try {
     GmailApp.sendEmail(toStr, subject, plain, mailOpts);
@@ -208,6 +209,7 @@ function sendSystemEmail_(toEmails, ccEmails, subject, htmlBody, plainBody) {
         from: sender.email
       };
       if (ccStr) basicMailOpts.cc = ccStr;
+      if (attachments && attachments.length) basicMailOpts.attachments = attachments;
       MailApp.sendEmail(basicMailOpts);
       return;
     } catch (mailErr) {
@@ -223,6 +225,7 @@ function sendSystemEmail_(toEmails, ccEmails, subject, htmlBody, plainBody) {
           replyTo: sender.email
         };
         if (ccStr) fallbackOpts.cc = ccStr;
+        if (attachments && attachments.length) fallbackOpts.attachments = attachments;
         MailApp.sendEmail(fallbackOpts);
         return;
       }
@@ -1353,8 +1356,14 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     '              </div>'
     ].join('') : '') + '',
     '              ',
+    '              <!-- PROMINENT ATTACHMENT CALLOUT BANNER -->',
+    '              <div style="margin-top:20px;padding:12px 18px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;color:#166534;font-size:12px;line-height:1.5;">',
+    '                <div style="font-weight:800;font-size:12px;margin-bottom:3px;color:#15803d;letter-spacing:0.3px;">📊 EXCEL DETAILED REPORT ATTACHED (.xlsx)</div>',
+    '                <div>The complete defect dataset and executive summary workbook has been generated and attached to this email for your offline analysis and record keeping.</div>',
+    '              </div>',
+    '              ',
     '              <!-- PROMINENT AUTO-GENERATED DISCLAIMER -->',
-    '              <div style="margin-top:24px;padding:14px 18px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:12px;line-height:1.5;">',
+    '              <div style="margin-top:14px;padding:14px 18px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:12px;line-height:1.5;">',
     '                <div style="font-weight:800;font-size:12px;margin-bottom:4px;letter-spacing:0.5px;">[ AUTOMATED REPORT NOTICE ]</div>',
     '                <div>This is an <b>auto-generated report</b> produced by the <b>PG Group AC Leakage Monitoring System</b>. Please do not reply directly to this email. For any queries, discrepancies, or routing changes, please contact the Quality Team or IT Admin.</div>',
     '              </div>',
@@ -1376,6 +1385,220 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     '</body>',
     '</html>'
   ].join('');
+}
+
+function createMonthlyReportExcelAttachment_(plantName, locationName, monthLabel, records) {
+  const cleanPlant = (plantName || 'PGTL').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanMonth = (monthLabel || 'Monthly_Report').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fileName = 'PG_Group_AC_Leakage_Report_' + cleanPlant + '_' + cleanMonth + '.xlsx';
+
+  let tempSs = null;
+  try {
+    tempSs = SpreadsheetApp.create('Temp_Monthly_Leakage_Export_' + cleanPlant + '_' + cleanMonth);
+    const ssId = tempSs.getId();
+
+    // Sheet 1: Detailed Defect Records
+    const dataSheet = tempSs.getSheets()[0];
+    dataSheet.setName('Defect Records');
+
+    const headers = [
+      'Timestamp',
+      'Location',
+      'Plant',
+      'Unit Type',
+      'Production Line',
+      'Defect Type',
+      'Joint / Location',
+      'Severity',
+      'Shift',
+      'Action Taken',
+      'Quantity',
+      'Operator Name',
+      'Reported By'
+    ];
+
+    const rows = [headers];
+    let totalQty = 0;
+    let criticalCount = 0;
+    let majorCount = 0;
+    let minorCount = 0;
+    let reworkCount = 0;
+    let scrapCount = 0;
+    let acceptedCount = 0;
+
+    records.forEach(function(r) {
+      const q = Number(r.quantity) > 0 ? Number(r.quantity) : 1;
+      totalQty += q;
+      const sev = String(r.severity || '').toLowerCase();
+      if (sev === 'critical') criticalCount += q;
+      else if (sev === 'major') majorCount += q;
+      else minorCount += q;
+
+      const act = String(r.action || '').toLowerCase();
+      if (act.indexOf('rework') >= 0) reworkCount += q;
+      else if (act.indexOf('scrap') >= 0) scrapCount += q;
+      else if (act.indexOf('accept') >= 0) acceptedCount += q;
+
+      let formattedDate = '';
+      if (r.timestamp) {
+        try {
+          formattedDate = Utilities.formatDate(new Date(r.timestamp), Session.getScriptTimeZone() || 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
+        } catch (_) {
+          formattedDate = String(r.timestamp);
+        }
+      }
+
+      rows.push([
+        formattedDate,
+        String(r.location || locationName || 'Pune'),
+        String(r.plant || plantName || 'PGTL'),
+        String(r.type || '-'),
+        String(r.productionLine || '-'),
+        String(r.defectType || '-'),
+        String(r.joint || '-'),
+        String(r.severity || '-'),
+        String(r.shift || '-'),
+        String(r.action || '-'),
+        q,
+        String(r.operatorName || '-'),
+        String(r.reportedBy || '-')
+      ]);
+    });
+
+    if (rows.length === 1) {
+      rows.push(['No defect records found for this period.', '', '', '', '', '', '', '', '', '', 0, '', '']);
+    }
+
+    const range = dataSheet.getRange(1, 1, rows.length, headers.length);
+    range.setValues(rows);
+
+    // Styling Header
+    const headerRange = dataSheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground('#1e293b');
+    headerRange.setFontColor('#ffffff');
+    headerRange.setFontWeight('bold');
+    headerRange.setHorizontalAlignment('center');
+
+    // Freeze header row
+    dataSheet.setFrozenRows(1);
+
+    // Sheet 2: Executive Summary & KPIs
+    const summarySheet = tempSs.insertSheet('Executive Summary');
+    const summaryData = [
+      ['PG GROUP - AC LEAKAGE MONITORING SYSTEM', ''],
+      ['Monthly Performance Executive Summary', ''],
+      ['', ''],
+      ['Report Parameter', 'Value'],
+      ['Plant Name', String(plantName || 'All Plants')],
+      ['Location', String(locationName || 'Pune')],
+      ['Month / Year', String(monthLabel || '')],
+      ['Generated On', Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss')],
+      ['', ''],
+      ['Key Performance Indicator (KPI)', 'Count'],
+      ['Total Leakage Incidents (Qty)', totalQty],
+      ['Critical Severity Leaks', criticalCount],
+      ['Major Severity Leaks', majorCount],
+      ['Minor Severity Leaks', minorCount],
+      ['Rework Action Items', reworkCount],
+      ['Scrapped Units', scrapCount],
+      ['Accepted / Normal', acceptedCount]
+    ];
+
+    summarySheet.getRange(1, 1, summaryData.length, 2).setValues(summaryData);
+    summarySheet.getRange('A1:B1').merge().setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold').setFontSize(14).setHorizontalAlignment('center');
+    summarySheet.getRange('A2:B2').merge().setBackground('#334155').setFontColor('#ffffff').setFontSize(11).setHorizontalAlignment('center');
+    summarySheet.getRange('A4:B4').setBackground('#e2e8f0').setFontWeight('bold');
+    summarySheet.getRange('A10:B10').setBackground('#e2e8f0').setFontWeight('bold');
+    summarySheet.setColumnWidth(1, 260);
+    summarySheet.setColumnWidth(2, 160);
+
+    SpreadsheetApp.flush();
+
+    // Export to Excel .xlsx via OAuth token
+    const url = 'https://docs.google.com/feeds/download/spreadsheets/Export?key=' + ssId + '&exportFormat=xlsx';
+    const params = {
+      method: 'get',
+      headers: { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    };
+    const res = UrlFetchApp.fetch(url, params);
+
+    if (res.getResponseCode() === 200) {
+      const blob = res.getBlob().setName(fileName);
+      try {
+        DriveApp.getFileById(ssId).setTrashed(true);
+      } catch (_) {}
+      return blob;
+    }
+  } catch (err) {
+    Logger.log('createMonthlyReportExcelAttachment_ error: ' + err);
+  } finally {
+    if (tempSs) {
+      try {
+        DriveApp.getFileById(tempSs.getId()).setTrashed(true);
+      } catch (_) {}
+    }
+  }
+
+  // Fallback to CSV format if XLSX export cannot be generated
+  return createMonthlyReportCsvBlob_(plantName, locationName, monthLabel, records);
+}
+
+function createMonthlyReportCsvBlob_(plantName, locationName, monthLabel, records) {
+  const cleanPlant = (plantName || 'PGTL').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanMonth = (monthLabel || 'Monthly_Report').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fileName = 'PG_Group_AC_Leakage_Report_' + cleanPlant + '_' + cleanMonth + '.csv';
+
+  const headers = [
+    'Timestamp',
+    'Location',
+    'Plant',
+    'Unit Type',
+    'Production Line',
+    'Defect Type',
+    'Joint / Location',
+    'Severity',
+    'Shift',
+    'Action Taken',
+    'Quantity',
+    'Operator Name',
+    'Reported By'
+  ];
+
+  const escapeCsv = function(val) {
+    const s = String(val == null ? '' : val).replace(/"/g, '""');
+    return s.search(/("|,|\n|\r)/g) >= 0 ? '"' + s + '"' : s;
+  };
+
+  const csvRows = [headers.map(escapeCsv).join(',')];
+
+  records.forEach(function(r) {
+    let formattedDate = '';
+    if (r.timestamp) {
+      try {
+        formattedDate = Utilities.formatDate(new Date(r.timestamp), Session.getScriptTimeZone() || 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
+      } catch (_) {
+        formattedDate = String(r.timestamp);
+      }
+    }
+    csvRows.push([
+      escapeCsv(formattedDate),
+      escapeCsv(r.location || locationName || 'Pune'),
+      escapeCsv(r.plant || plantName || 'PGTL'),
+      escapeCsv(r.type || '-'),
+      escapeCsv(r.productionLine || '-'),
+      escapeCsv(r.defectType || '-'),
+      escapeCsv(r.joint || '-'),
+      escapeCsv(r.severity || '-'),
+      escapeCsv(r.shift || '-'),
+      escapeCsv(r.action || '-'),
+      escapeCsv(Number(r.quantity) > 0 ? Number(r.quantity) : 1),
+      escapeCsv(r.operatorName || '-'),
+      escapeCsv(r.reportedBy || '-')
+    ].join(','));
+  });
+
+  return Utilities.newBlob(csvRows.join('\r\n'), 'text/csv', fileName);
 }
 
 function sendMonthlyPlantLeakageReports(options) {
@@ -1488,15 +1711,26 @@ function sendMonthlyPlantLeakageReports(options) {
     const htmlBody = buildMonthlyReportHtml_(plant, location, monthLabel, recs, totalLeaks);
     const subject = 'PG Group AC Leakage Performance Report — ' + plant + ' (' + location + ') [' + monthLabel + ']';
 
+    // Generate Excel attachment for this plant report
+    let excelAttachment = null;
     try {
-      sendSystemEmail_(toList, ccList, subject, htmlBody);
+      excelAttachment = createMonthlyReportExcelAttachment_(plant, location, monthLabel, recs);
+    } catch (attErr) {
+      Logger.log('Excel generation fallback: ' + attErr);
+      excelAttachment = createMonthlyReportCsvBlob_(plant, location, monthLabel, recs);
+    }
+    const attachments = excelAttachment ? [excelAttachment] : [];
+
+    try {
+      sendSystemEmail_(toList, ccList, subject, htmlBody, '', attachments);
       emailResults.push({
         plant: plant,
         location: location,
         to: toList.join(', '),
         cc: ccList.join(', '),
         totalLeaks: totalLeaks,
-        status: 'sent'
+        status: 'sent',
+        attachment: excelAttachment ? excelAttachment.getName() : 'none'
       });
       logEmailActivity_({
         type: options.testEmail ? 'test_report' : 'monthly_report',
