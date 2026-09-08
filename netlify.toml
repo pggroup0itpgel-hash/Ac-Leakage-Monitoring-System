@@ -1,0 +1,7 @@
+[functions]
+  directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/otp"
+  to = "/.netlify/functions/otp"
+  status = 200
