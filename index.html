@@ -2421,18 +2421,17 @@ async function protectedExportToExcel(type) {
       syncMonthlyRoutePlantDropdown();
       syncMonthlyTestPlantDropdown();
 
-      let settings = cfg.monthlyReportSettings || null;
-      if (!settings) {
-        try {
-          const res = await otpRequest('getMonthlyReportSettings', {});
-          if (res && res.settings) {
-            settings = res.settings;
-            cfg.monthlyReportSettings = settings;
-          }
-        } catch (_) {}
+      try {
+        const res = await otpRequest('getMonthlyReportSettings', {});
+        if (res && res.settings) {
+          cfg.monthlyReportSettings = res.settings;
+          APP_STATE.config.monthlyReportSettings = res.settings;
+        }
+      } catch (err) {
+        console.warn('Could not fetch monthly settings from Sheet:', err);
       }
 
-      settings = settings || {
+      const settings = (APP_STATE.config && APP_STATE.config.monthlyReportSettings) || {
         enabled: true,
         defaultTo: 'verify.software2040@pgel.in',
         defaultCc: '',
@@ -2505,7 +2504,7 @@ async function protectedExportToExcel(type) {
       });
     }
 
-    function saveLocationPlantEmailRoute() {
+    async function saveLocationPlantEmailRoute() {
       const loc = document.getElementById('monthlyRouteLocation').value;
       const plant = document.getElementById('monthlyRoutePlant').value;
       const to = String(document.getElementById('monthlyRouteTo').value || '').trim();
@@ -2521,14 +2520,15 @@ async function protectedExportToExcel(type) {
       APP_STATE.config.monthlyReportSettings.locationRoutes = APP_STATE.config.monthlyReportSettings.locationRoutes || {};
       APP_STATE.config.monthlyReportSettings.plantRoutes = APP_STATE.config.monthlyReportSettings.plantRoutes || {};
 
+      let routeName = '';
       if (plant === '*' && loc !== '*') {
         // Location-level multi-plant route
         APP_STATE.config.monthlyReportSettings.locationRoutes[loc] = { to, cc };
-        showNotice(`Location-level route saved for ${loc} (applies to all plants under ${loc}).`, 'success');
+        routeName = `Location route for ${loc}`;
       } else if (plant !== '*') {
         // Specific plant override
         APP_STATE.config.monthlyReportSettings.plantRoutes[plant] = { to, cc };
-        showNotice(`Plant-specific route saved for ${plant}.`, 'success');
+        routeName = `Plant route for ${plant}`;
       } else {
         // Both are '*' -> Global default
         APP_STATE.config.monthlyReportSettings.defaultTo = to;
@@ -2537,49 +2537,60 @@ async function protectedExportToExcel(type) {
         const ccEl = document.getElementById('monthlyDefaultCc');
         if (toEl) toEl.value = to;
         if (ccEl) ccEl.value = cc;
-        showNotice('Global default To/CC email route updated.', 'success');
+        routeName = 'Global default route';
       }
 
       document.getElementById('monthlyRouteTo').value = '';
       document.getElementById('monthlyRouteCc').value = '';
       renderMonthlyPlantRoutesTable();
+
+      // Persist immediately to Google Sheet & Firebase
+      await saveMonthlyEmailSettingsFromUI(false);
+      showNotice(`${routeName} saved to Google Sheet successfully!`, 'success');
       queueAutoSyncSettings('monthly_report_route_update');
     }
 
-    function deleteEmailRoute(scope, key) {
+    async function deleteEmailRoute(scope, key) {
       if (scope === 'location' && APP_STATE.config?.monthlyReportSettings?.locationRoutes?.[key]) {
         delete APP_STATE.config.monthlyReportSettings.locationRoutes[key];
         renderMonthlyPlantRoutesTable();
-        showNotice(`Removed location route for ${key}.`, 'info');
+        await saveMonthlyEmailSettingsFromUI(false);
+        showNotice(`Removed location route for ${key} from Google Sheet.`, 'info');
         queueAutoSyncSettings('monthly_report_location_route_delete');
       } else if (scope === 'plant' && APP_STATE.config?.monthlyReportSettings?.plantRoutes?.[key]) {
         delete APP_STATE.config.monthlyReportSettings.plantRoutes[key];
         renderMonthlyPlantRoutesTable();
-        showNotice(`Removed plant route for ${key}.`, 'info');
+        await saveMonthlyEmailSettingsFromUI(false);
+        showNotice(`Removed plant route for ${key} from Google Sheet.`, 'info');
         queueAutoSyncSettings('monthly_report_plant_route_delete');
       }
     }
 
-    async function saveMonthlyEmailSettingsFromUI() {
-      const enabled = document.getElementById('monthlyAutoReportEnabled').checked;
-      const defaultTo = String(document.getElementById('monthlyDefaultTo').value || '').trim();
-      const defaultCc = String(document.getElementById('monthlyDefaultCc').value || '').trim();
+    async function saveMonthlyEmailSettingsFromUI(showNoticeMsg = true) {
+      const enEl = document.getElementById('monthlyAutoReportEnabled');
+      const enabled = enEl ? enEl.checked : true;
+      const defaultTo = String(document.getElementById('monthlyDefaultTo')?.value || '').trim();
+      const defaultCc = String(document.getElementById('monthlyDefaultCc')?.value || '').trim();
 
       APP_STATE.config = APP_STATE.config || {};
       APP_STATE.config.monthlyReportSettings = APP_STATE.config.monthlyReportSettings || {};
       APP_STATE.config.monthlyReportSettings.enabled = enabled;
-      APP_STATE.config.monthlyReportSettings.defaultTo = defaultTo;
+      if (defaultTo) APP_STATE.config.monthlyReportSettings.defaultTo = defaultTo;
       APP_STATE.config.monthlyReportSettings.defaultCc = defaultCc;
 
       try {
         await otpRequest('saveMonthlyReportSettings', {
-          actorEmail: APP_STATE.user?.email || '',
+          actorEmail: APP_STATE.user?.email || 'admin@system',
           settings: APP_STATE.config.monthlyReportSettings
         });
         if (database) {
-          await database.ref('appConfig/monthlyReportSettings').set(APP_STATE.config.monthlyReportSettings);
+          try {
+            await database.ref('appConfig/monthlyReportSettings').set(APP_STATE.config.monthlyReportSettings);
+          } catch (_) {}
         }
-        showNotice('Monthly auto-report email settings saved successfully.', 'success');
+        if (showNoticeMsg) {
+          showNotice('Monthly auto-report email settings saved to Google Sheet successfully.', 'success');
+        }
       } catch (e) {
         showNotice('Failed to save email settings: ' + (e.message || 'unknown'), 'error');
       }
@@ -2904,50 +2915,64 @@ async function protectedExportToExcel(type) {
       `;
     }
 
-    function buildLocalMonthlyReportHtml(plantName, locationName, monthLabel, records, totalLeaks) {
-      const cfg = APP_STATE.config || {};
-      const knownLocations = cfg.locations || {};
-      const knownPlants = cfg.plants || {};
+    function getPlantsForLocationLocal(cfg, targetLocation, records) {
+      const normLoc = canonicalLocationName(targetLocation || '');
+      const plantsFound = {};
 
-      let groups = [];
-      const isAllPlants = plantName === 'All Plants' || plantName === '*';
-
-      if (isAllPlants) {
-        // Collect all plants in the selected location or globally
-        const targetLoc = locationName === 'All Locations' || locationName === '*' ? '' : locationName;
-        const plantSet = {};
-
-        if (targetLoc && knownLocations[targetLoc] && knownLocations[targetLoc].plants) {
-          Object.keys(knownLocations[targetLoc].plants).forEach(p => { plantSet[p] = targetLoc; });
-        } else {
-          Object.keys(knownPlants).forEach(p => {
-            const locs = (knownPlants[p] && knownPlants[p].locations) || ['Pune'];
-            locs.forEach(l => { if (!targetLoc || l === targetLoc) plantSet[p] = l; });
+      const cfgLocs = cfg.locations || {};
+      Object.keys(cfgLocs).forEach(l => {
+        if (!normLoc || canonicalLocationName(l) === normLoc) {
+          const pMap = (cfgLocs[l] && cfgLocs[l].plants) || {};
+          Object.keys(pMap).forEach(p => {
+            if (p) plantsFound[p] = l;
           });
         }
+      });
 
-        // Also add any plants from the records
-        (records || []).forEach(r => {
-          const p = r.plant || 'PGTL';
-          const l = r.location || 'Pune';
-          if (!targetLoc || l.toLowerCase() === targetLoc.toLowerCase()) {
-            plantSet[p] = l;
+      const cfgPlants = cfg.plants || {};
+      Object.keys(cfgPlants).forEach(p => {
+        const locs = (cfgPlants[p] && cfgPlants[p].locations) || [];
+        locs.forEach(l => {
+          if (!normLoc || canonicalLocationName(l) === normLoc) {
+            if (p) plantsFound[p] = l;
           }
         });
+      });
 
-        if (Object.keys(plantSet).length === 0) {
-          plantSet['PGTL'] = targetLoc || 'Pune';
+      (records || []).forEach(r => {
+        const rLoc = r.location || '';
+        const rPlant = r.plant || '';
+        if (rPlant && (!normLoc || canonicalLocationName(rLoc) === normLoc)) {
+          plantsFound[rPlant] = rLoc || targetLocation || 'Pune';
         }
+      });
 
-        groups = Object.keys(plantSet).sort().map(p => {
-          const loc = plantSet[p] || 'Pune';
-          const plantRecs = (records || []).filter(r => canonicalPlantName(r.plant) === canonicalPlantName(p));
-          return { plant: p, location: loc, records: plantRecs };
+      return plantsFound;
+    }
+
+    function buildLocalMonthlyReportHtml(plantName, locationName, monthLabel, records, totalLeaks) {
+      const cfg = APP_STATE.config || {};
+      const targetLoc = (locationName === 'All Locations' || locationName === '*') ? '' : locationName;
+      const targetPlant = (plantName === 'All Plants' || plantName === '*') ? '' : plantName;
+
+      const plantMap = getPlantsForLocationLocal(cfg, targetLoc, records);
+      let groups = [];
+
+      Object.keys(plantMap).forEach(p => {
+        if (targetPlant && canonicalPlantName(p) !== canonicalPlantName(targetPlant)) return;
+        const loc = plantMap[p] || targetLoc || 'Pune';
+        const plantRecs = (records || []).filter(r => {
+          const locMatch = !targetLoc || canonicalLocationName(r.location || '') === canonicalLocationName(targetLoc);
+          const plantMatch = canonicalPlantName(r.plant || '') === canonicalPlantName(p);
+          return locMatch && plantMatch;
         });
-      } else {
+        groups.push({ plant: p, location: loc, records: plantRecs });
+      });
+
+      if (groups.length === 0) {
         groups = [{
-          plant: plantName || 'PGTL',
-          location: locationName && locationName !== 'All Locations' ? locationName : 'Pune',
+          plant: targetPlant || 'PGTL',
+          location: targetLoc || 'Pune',
           records: records || []
         }];
       }

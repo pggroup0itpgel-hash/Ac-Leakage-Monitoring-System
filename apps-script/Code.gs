@@ -485,6 +485,14 @@ function getConfig_() {
   }
   applySetupSheetOverrides_(config, getRowsAsObjects_(setupSheetSh));
   rebuildPlantsFromLocations_(config);
+  try {
+    const monthlyRes = getMonthlyReportSettings_();
+    if (monthlyRes && monthlyRes.settings) {
+      config.monthlyReportSettings = monthlyRes.settings;
+    }
+  } catch (e) {
+    console.warn('Could not load monthlyReportSettings in getConfig:', e);
+  }
   return { config: config };
 }
 
@@ -924,6 +932,17 @@ function syncSettings_(payload) {
   uiSettingsSh.appendRow(['settingsPin', String(uiSecurity.settingsPin || '1234'), new Date()]);
   uiSettingsSh.appendRow(['excelPin', String(uiSecurity.excelPin || '1234'), new Date()]);
 
+  if (settings.monthlyReportSettings) {
+    try {
+      saveMonthlyReportSettings_({
+        settings: settings.monthlyReportSettings,
+        actorEmail: actorEmail
+      });
+    } catch (e) {
+      console.warn('Could not sync monthlyReportSettings in syncSettings_:', e);
+    }
+  }
+
   logActivity_({
     email: actorEmail,
     role: 'it_admin',
@@ -963,7 +982,8 @@ function applySetupSheet() {
 // ==========================================
 
 function getMonthlyReportSettings_(payload) {
-  const sh = ensureTab_(TAB.monthlySettings, ['key', 'value', 'updatedAt']);
+  const headers = ['Scope / Level', 'Target Name', 'To Email(s)', 'CC Email(s)', 'Key / System Code', 'Updated At'];
+  const sh = ensureTab_(TAB.monthlySettings, headers);
   const values = sh.getDataRange().getValues();
   const settings = {
     enabled: true,
@@ -976,29 +996,51 @@ function getMonthlyReportSettings_(payload) {
   };
 
   for (let i = 1; i < values.length; i++) {
-    const key = String(values[i][0] || '').trim();
-    const val = String(values[i][1] || '').trim();
-    if (!key) continue;
+    const col0 = String(values[i][0] || '').trim();
+    const col1 = String(values[i][1] || '').trim();
+    const col2 = String(values[i][2] || '').trim();
+    const col3 = String(values[i][3] || '').trim();
+    const col4 = String(values[i][4] || '').trim();
 
-    if (key === 'enabled') settings.enabled = val.toLowerCase() !== 'false';
-    else if (key === 'defaultTo') settings.defaultTo = val || DEFAULT_OTP_SENDER_EMAIL;
-    else if (key === 'defaultCc') settings.defaultCc = val;
-    else if (key === 'sendDayOfMonth') settings.sendDayOfMonth = Number(val) || 1;
-    else if (key === 'sendHour') settings.sendHour = Number(val) || 8;
-    else if (key.indexOf('loc_') === 0) {
-      const locName = key.substring(4);
-      try {
-        settings.locationRoutes[locName] = JSON.parse(val);
-      } catch (_) {
-        settings.locationRoutes[locName] = { to: val, cc: '' };
-      }
+    if (!col0 && !col1) continue;
+
+    // Structured Multi-Column Format
+    if (col0 === 'Global Default') {
+      if (col2) settings.defaultTo = col2;
+      if (col3) settings.defaultCc = col3;
+    } else if (col0 === 'Location Route') {
+      const loc = col1;
+      if (loc) settings.locationRoutes[loc] = { to: col2, cc: col3 };
+    } else if (col0 === 'Plant Route') {
+      const plant = col1;
+      if (plant) settings.plantRoutes[plant] = { to: col2, cc: col3 };
+    } else if (col0 === 'System' && col1.indexOf('Trigger') >= 0) {
+      if (col4) settings.enabled = col4.toLowerCase() !== 'false';
+    } else if (col0 === 'Schedule' && col1.indexOf('Day') >= 0) {
+      if (col4) settings.sendDayOfMonth = Number(col4) || 1;
+    } else if (col0 === 'Schedule' && col1.indexOf('Hour') >= 0) {
+      if (col4) settings.sendHour = Number(col4) || 8;
     }
-    else if (key.indexOf('plant_') === 0) {
-      const plantName = key.substring(6);
+
+    // Legacy Key-Value Format Fallback
+    if (col0 === 'enabled') settings.enabled = col1.toLowerCase() !== 'false';
+    else if (col0 === 'defaultTo') settings.defaultTo = col1 || DEFAULT_OTP_SENDER_EMAIL;
+    else if (col0 === 'defaultCc') settings.defaultCc = col1;
+    else if (col0 === 'sendDayOfMonth') settings.sendDayOfMonth = Number(col1) || 1;
+    else if (col0 === 'sendHour') settings.sendHour = Number(col1) || 8;
+    else if (col0.indexOf('loc_') === 0) {
+      const locName = col0.substring(4);
       try {
-        settings.plantRoutes[plantName] = JSON.parse(val);
+        settings.locationRoutes[locName] = JSON.parse(col1);
       } catch (_) {
-        settings.plantRoutes[plantName] = { to: val, cc: '' };
+        settings.locationRoutes[locName] = { to: col1, cc: col2 || '' };
+      }
+    } else if (col0.indexOf('plant_') === 0) {
+      const plantName = col0.substring(6);
+      try {
+        settings.plantRoutes[plantName] = JSON.parse(col1);
+      } catch (_) {
+        settings.plantRoutes[plantName] = { to: col1, cc: col2 || '' };
       }
     }
   }
@@ -1008,25 +1050,34 @@ function getMonthlyReportSettings_(payload) {
 function saveMonthlyReportSettings_(payload) {
   const settings = payload.settings || {};
   const actorEmail = normalizeEmail_(payload.actorEmail || '');
-  const sh = ensureTab_(TAB.monthlySettings, ['key', 'value', 'updatedAt']);
-  clearDataRows_(sh);
+  const headers = ['Scope / Level', 'Target Name', 'To Email(s)', 'CC Email(s)', 'Key / System Code', 'Updated At'];
+  const sh = ensureTab_(TAB.monthlySettings, headers);
 
-  sh.appendRow(['enabled', String(settings.enabled !== false), new Date()]);
-  sh.appendRow(['defaultTo', String(settings.defaultTo || DEFAULT_OTP_SENDER_EMAIL), new Date()]);
-  sh.appendRow(['defaultCc', String(settings.defaultCc || ''), new Date()]);
-  sh.appendRow(['sendDayOfMonth', String(settings.sendDayOfMonth || 1), new Date()]);
-  sh.appendRow(['sendHour', String(settings.sendHour || 8), new Date()]);
+  // Clear existing rows and ensure clear headers
+  sh.clear();
+  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  try {
+    sh.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#f1f5f9');
+  } catch (_) {}
 
+  // System & Schedule Configuration
+  sh.appendRow(['System', 'Automated Email Trigger', '', '', String(settings.enabled !== false), new Date()]);
+  sh.appendRow(['Global Default', 'All Plants & Locations', String(settings.defaultTo || DEFAULT_OTP_SENDER_EMAIL), String(settings.defaultCc || ''), 'default', new Date()]);
+  sh.appendRow(['Schedule', 'Day of Month', '', '', String(settings.sendDayOfMonth || 1), new Date()]);
+  sh.appendRow(['Schedule', 'Hour of Day (8 AM)', '', '', String(settings.sendHour || 8), new Date()]);
+
+  // Location-level Routes
   const locRoutes = settings.locationRoutes || {};
   Object.keys(locRoutes).forEach(function(loc) {
     const r = locRoutes[loc] || {};
-    sh.appendRow(['loc_' + loc, JSON.stringify(r), new Date()]);
+    sh.appendRow(['Location Route', String(loc), String(r.to || ''), String(r.cc || ''), JSON.stringify(r), new Date()]);
   });
 
+  // Plant-specific Routes
   const routes = settings.plantRoutes || {};
   Object.keys(routes).forEach(function(plant) {
     const r = routes[plant] || {};
-    sh.appendRow(['plant_' + plant, JSON.stringify(r), new Date()]);
+    sh.appendRow(['Plant Route', String(plant), String(r.to || ''), String(r.cc || ''), JSON.stringify(r), new Date()]);
   });
 
   logActivity_({
@@ -1036,6 +1087,8 @@ function saveMonthlyReportSettings_(payload) {
     source: 'code.gs',
     meta: {
       enabled: settings.enabled,
+      defaultTo: settings.defaultTo,
+      defaultCc: settings.defaultCc,
       locationsConfigured: Object.keys(locRoutes).length,
       plantsConfigured: Object.keys(routes).length
     }
@@ -2059,6 +2112,44 @@ function createMonthlyReportCsvBlob_(plantOrGroups, locationName, monthLabel, re
   return Utilities.newBlob(csvRows.join('\r\n'), 'text/csv', fileName);
 }
 
+function getPlantsForLocation_(config, targetLocation, records) {
+  const normLoc = String(targetLocation || '').trim().toLowerCase();
+  const plantsFound = {};
+
+  // 1. From config.locations
+  const cfgLocs = config.locations || {};
+  Object.keys(cfgLocs).forEach(function(l) {
+    if (!normLoc || l.toLowerCase() === normLoc) {
+      const pMap = (cfgLocs[l] && cfgLocs[l].plants) || {};
+      Object.keys(pMap).forEach(function(p) {
+        if (p) plantsFound[p] = l;
+      });
+    }
+  });
+
+  // 2. From config.plants
+  const cfgPlants = config.plants || {};
+  Object.keys(cfgPlants).forEach(function(p) {
+    const locs = (cfgPlants[p] && cfgPlants[p].locations) || [];
+    locs.forEach(function(l) {
+      if (!normLoc || String(l).trim().toLowerCase() === normLoc) {
+        if (p) plantsFound[p] = l;
+      }
+    });
+  });
+
+  // 3. From actual defect records logged for this location
+  (records || []).forEach(function(r) {
+    const rLoc = String(r.location || '').trim();
+    const rPlant = String(r.plant || '').trim();
+    if (rPlant && (!normLoc || rLoc.toLowerCase() === normLoc)) {
+      plantsFound[rPlant] = rLoc || targetLocation || 'Pune';
+    }
+  });
+
+  return plantsFound;
+}
+
 function sendMonthlyPlantLeakageReports(options) {
   options = options || {};
   const cfgRes = getMonthlyReportSettings_();
@@ -2105,122 +2196,92 @@ function sendMonthlyPlantLeakageReports(options) {
   const config = getConfig_().config || {};
   const knownLocations = config.locations || {};
 
-  // Build target groups: Map "plant___location" -> { plant, location, records: [] }
-  const groupsMap = {};
-
-  // 1. Seed from catalog hierarchy
-  Object.keys(knownLocations).forEach(function(locName) {
-    const plantsInLoc = (knownLocations[locName] && knownLocations[locName].plants) || {};
-    Object.keys(plantsInLoc).forEach(function(pName) {
-      const gKey = pName.toLowerCase() + '___' + locName.toLowerCase();
-      groupsMap[gKey] = { plant: pName, location: locName, records: [] };
+  // Identify all distinct locations to monitor
+  const locationsToProcess = [];
+  if (targetLocationFilter && targetLocationFilter !== '*') {
+    locationsToProcess.push(targetLocationFilter);
+  } else {
+    const locSet = {};
+    Object.keys(knownLocations).forEach(function(l) { if (l) locSet[l] = true; });
+    Object.keys(config.plants || {}).forEach(function(p) {
+      const locs = (config.plants[p] && config.plants[p].locations) || [];
+      locs.forEach(function(l) { if (l) locSet[l] = true; });
     });
-  });
-
-  // 2. Seed from plant master
-  const knownPlants = config.plants || {};
-  Object.keys(knownPlants).forEach(function(pName) {
-    const locs = (knownPlants[pName] && knownPlants[pName].locations) || ['Pune'];
-    locs.forEach(function(lName) {
-      const gKey = pName.toLowerCase() + '___' + lName.toLowerCase();
-      if (!groupsMap[gKey]) {
-        groupsMap[gKey] = { plant: pName, location: lName, records: [] };
-      }
+    monthRecords.forEach(function(r) {
+      const l = String(r.location || '').trim();
+      if (l) locSet[l] = true;
     });
-  });
-
-  // 3. Seed from plantRoutes
-  Object.keys(plantRoutes).forEach(function(pName) {
-    let loc = 'Pune';
-    Object.keys(knownLocations).forEach(function(l) {
-      if (knownLocations[l] && knownLocations[l].plants && knownLocations[l].plants[pName]) {
-        loc = l;
-      }
-    });
-    const gKey = pName.toLowerCase() + '___' + loc.toLowerCase();
-    if (!groupsMap[gKey]) {
-      groupsMap[gKey] = { plant: pName, location: loc, records: [] };
-    }
-  });
-
-  // Seed default if empty
-  if (Object.keys(groupsMap).length === 0) {
-    groupsMap['pgtl___pune'] = { plant: 'PGTL', location: 'Pune', records: [] };
+    Object.keys(locSet).forEach(function(l) { locationsToProcess.push(l); });
   }
 
-  // Populate month records into matching groups
-  monthRecords.forEach(function(r) {
-    const p = String(r.plant || 'PGTL').trim();
-    const loc = String(r.location || 'Pune').trim();
-    const gKey = p.toLowerCase() + '___' + loc.toLowerCase();
-    if (!groupsMap[gKey]) {
-      groupsMap[gKey] = { plant: p, location: loc, records: [] };
-    }
-    groupsMap[gKey].records.push(r);
-  });
-
-  // If specific plant and location was passed in options, ensure it exists
-  if (targetPlantFilter && targetPlantFilter !== '*' && targetLocationFilter && targetLocationFilter !== '*') {
-    const specificKey = targetPlantFilter.toLowerCase() + '___' + targetLocationFilter.toLowerCase();
-    if (!groupsMap[specificKey]) {
-      groupsMap[specificKey] = { plant: targetPlantFilter, location: targetLocationFilter, records: [] };
-    }
+  if (locationsToProcess.length === 0) {
+    locationsToProcess.push('Pune');
   }
 
-  // Group plants by destination recipient so that recipients receiving reports for
-  // multiple plants (e.g. global defaultTo, location-level routes, or All Plants test)
-  // receive ONE consolidated, clearly formatted email instead of multiple separate emails.
   const recipientBatches = {};
   const emailResults = [];
 
-  Object.keys(groupsMap).forEach(function(gKey) {
-    const grp = groupsMap[gKey];
-    const plant = grp.plant;
-    const location = grp.location;
+  locationsToProcess.forEach(function(locName) {
+    const plantMap = getPlantsForLocation_(config, locName, monthRecords);
+    let plantList = Object.keys(plantMap);
 
-    // Apply Location filter if specified
-    if (targetLocationFilter && targetLocationFilter !== '*' && location.toLowerCase() !== targetLocationFilter.toLowerCase()) {
-      return;
+    if (targetPlantFilter && targetPlantFilter !== '*') {
+      plantList = plantList.filter(function(p) {
+        return p.toLowerCase() === targetPlantFilter.toLowerCase();
+      });
+      if (plantList.length === 0) {
+        plantList = [targetPlantFilter];
+        plantMap[targetPlantFilter] = locName;
+      }
     }
-    // Apply Plant filter if specified
-    if (targetPlantFilter && targetPlantFilter !== '*' && plant.toLowerCase() !== targetPlantFilter.toLowerCase()) {
-      return;
-    }
 
-    // Hierarchical email resolution:
-    // 1. Specific test override
-    // 2. Specific Plant route (e.g. PGTL)
-    // 3. Location-level route (e.g. Pune)
-    // 4. Global default
-    let toEmails = options.testEmail ||
-      (plantRoutes[plant] && plantRoutes[plant].to) ||
-      (locationRoutes[location] && locationRoutes[location].to) ||
-      settings.defaultTo ||
-      DEFAULT_OTP_SENDER_EMAIL;
-
-    let ccEmails = (options.testEmail ? (options.testCc || '') : '') ||
-      (plantRoutes[plant] && plantRoutes[plant].cc) ||
-      (locationRoutes[location] && locationRoutes[location].cc) ||
-      settings.defaultCc ||
-      '';
-
-    const toList = normalizeEmailList_(toEmails);
-    const ccList = normalizeEmailList_(ccEmails);
-
-    if (!toList.length) {
-      emailResults.push({ plant: plant, location: location, status: 'skipped', reason: 'No recipient email configured' });
+    if (plantList.length === 0) {
       return;
     }
 
-    const batchKey = toList.slice().sort().join(',') + '___' + ccList.slice().sort().join(',');
-    if (!recipientBatches[batchKey]) {
-      recipientBatches[batchKey] = {
-        toList: toList,
-        ccList: ccList,
-        groups: []
-      };
-    }
-    recipientBatches[batchKey].groups.push(grp);
+    // Process plants for this specific location
+    plantList.forEach(function(plant) {
+      const actualLoc = plantMap[plant] || locName;
+      const plantRecs = monthRecords.filter(function(r) {
+        const rLoc = String(r.location || '').trim();
+        const rPlant = String(r.plant || '').trim();
+        return rLoc.toLowerCase() === actualLoc.toLowerCase() && rPlant.toLowerCase() === plant.toLowerCase();
+      });
+
+      const grp = { plant: plant, location: actualLoc, records: plantRecs };
+
+      let toEmails = options.testEmail ||
+        (plantRoutes[plant] && plantRoutes[plant].to) ||
+        (locationRoutes[actualLoc] && locationRoutes[actualLoc].to) ||
+        settings.defaultTo ||
+        DEFAULT_OTP_SENDER_EMAIL;
+
+      let ccEmails = (options.testEmail ? (options.testCc || '') : '') ||
+        (plantRoutes[plant] && plantRoutes[plant].cc) ||
+        (locationRoutes[actualLoc] && locationRoutes[actualLoc].cc) ||
+        settings.defaultCc ||
+        '';
+
+      const toList = normalizeEmailList_(toEmails);
+      const ccList = normalizeEmailList_(ccEmails);
+
+      if (!toList.length) {
+        emailResults.push({ plant: plant, location: actualLoc, status: 'skipped', reason: 'No recipient email configured' });
+        return;
+      }
+
+      // Batch key includes location to prevent mixing different locations in one email!
+      const batchKey = actualLoc.toLowerCase() + '___' + toList.slice().sort().join(',') + '___' + ccList.slice().sort().join(',');
+      if (!recipientBatches[batchKey]) {
+        recipientBatches[batchKey] = {
+          location: actualLoc,
+          toList: toList,
+          ccList: ccList,
+          groups: []
+        };
+      }
+      recipientBatches[batchKey].groups.push(grp);
+    });
   });
 
   // Dispatch emails for each recipient batch
@@ -2349,57 +2410,33 @@ function previewMonthlyReport_(payload) {
   });
 
   const config = getConfig_().config || {};
-  const knownLocations = config.locations || {};
-  const knownPlants = config.plants || {};
-  const groupsMap = {};
+  const targetLoc = (locationName && locationName !== '*') ? locationName : '';
+  const targetPlant = (plantName && plantName !== '*') ? plantName : '';
 
-  // Seed known plants and locations
-  Object.keys(knownLocations).forEach(function(loc) {
-    const plantsInLoc = (knownLocations[loc] && knownLocations[loc].plants) || {};
-    Object.keys(plantsInLoc).forEach(function(p) {
-      const gKey = p.toLowerCase() + '___' + loc.toLowerCase();
-      groupsMap[gKey] = { plant: p, location: loc, records: [] };
-    });
-  });
-
-  Object.keys(knownPlants).forEach(function(p) {
-    const locs = (knownPlants[p] && knownPlants[p].locations) || ['Pune'];
-    locs.forEach(function(loc) {
-      const gKey = p.toLowerCase() + '___' + loc.toLowerCase();
-      if (!groupsMap[gKey]) {
-        groupsMap[gKey] = { plant: p, location: loc, records: [] };
-      }
-    });
-  });
-
-  if (Object.keys(groupsMap).length === 0) {
-    groupsMap['pgtl___pune'] = { plant: 'PGTL', location: 'Pune', records: [] };
-  }
-
-  // Populate month records
-  monthRecords.forEach(function(r) {
-    const p = String(r.plant || 'PGTL').trim();
-    const loc = String(r.location || 'Pune').trim();
-    const gKey = p.toLowerCase() + '___' + loc.toLowerCase();
-    if (!groupsMap[gKey]) {
-      groupsMap[gKey] = { plant: p, location: loc, records: [] };
-    }
-    groupsMap[gKey].records.push(r);
-  });
-
-  // Filter groups according to payload
+  const plantMap = getPlantsForLocation_(config, targetLoc, monthRecords);
   const matchingGroups = [];
-  Object.keys(groupsMap).forEach(function(gKey) {
-    const grp = groupsMap[gKey];
-    if (locationName && locationName !== '*' && grp.location.toLowerCase() !== locationName.toLowerCase()) return;
-    if (plantName && plantName !== '*' && grp.plant.toLowerCase() !== plantName.toLowerCase()) return;
-    matchingGroups.push(grp);
+
+  Object.keys(plantMap).forEach(function(p) {
+    if (targetPlant && p.toLowerCase() !== targetPlant.toLowerCase()) return;
+    const pLoc = plantMap[p] || targetLoc || 'Pune';
+    const plantRecs = monthRecords.filter(function(r) {
+      const rLoc = String(r.location || '').trim();
+      const rPlant = String(r.plant || '').trim();
+      const locMatch = !targetLoc || rLoc.toLowerCase() === targetLoc.toLowerCase();
+      const plantMatch = rPlant.toLowerCase() === p.toLowerCase();
+      return locMatch && plantMatch;
+    });
+    matchingGroups.push({
+      plant: p,
+      location: pLoc,
+      records: plantRecs
+    });
   });
 
   if (matchingGroups.length === 0) {
     matchingGroups.push({
-      plant: plantName && plantName !== '*' ? plantName : 'PGTL',
-      location: locationName && locationName !== '*' ? locationName : 'Pune',
+      plant: targetPlant || 'PGTL',
+      location: targetLoc || 'Pune',
       records: []
     });
   }
