@@ -1529,7 +1529,7 @@ function buildMonthlyReportHtml_(plantOrGroups, locationName, monthLabel, record
     '          <tr>',
     '            <td bgcolor="#1e293b" style="background-color:#1e293b !important;background:#1e293b;padding:28px 24px;text-align:left;color:#ffffff;border-bottom:3px solid #3b82f6;">',
     '              <div style="font-size:12px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">PG GROUP</div>',
-    '              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">' + (isMultiPlant ? 'Monthly AC Leakage Quality Report — Consolidated' : 'Monthly AC Leakage Quality Report') + '</h1>',
+    '              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">' + (isMultiPlant ? 'Monthly AC Leakage Quality Report - Consolidated' : 'Monthly AC Leakage Quality Report') + '</h1>',
     '              <div style="display:block;margin-top:10px;">',
     '                ' + locBadge,
     '                ' + plantBadge,
@@ -2245,10 +2245,10 @@ function sendMonthlyPlantLeakageReports(options) {
 
     if (isMulti) {
       const plantNames = grps.map(function(g) { return g.plant; });
-      subject = 'PG Group AC Leakage Performance Report — Consolidated (' + plantNames.join(' & ') + ') [' + monthLabel + ']';
+      subject = 'PG Group AC Leakage Performance Report - Consolidated (' + plantNames.join(' & ') + ') [' + monthLabel + ']';
       plantAuditLabel = 'Consolidated: ' + plantNames.join(', ');
     } else {
-      subject = 'PG Group AC Leakage Performance Report — ' + grps[0].plant + ' (' + grps[0].location + ') [' + monthLabel + ']';
+      subject = 'PG Group AC Leakage Performance Report - ' + grps[0].plant + ' (' + grps[0].location + ') [' + monthLabel + ']';
       plantAuditLabel = grps[0].plant + ' (' + grps[0].location + ')';
     }
 
