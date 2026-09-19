@@ -1044,10 +1044,19 @@ function saveMonthlyReportSettings_(payload) {
   return { saved: true, settings: settings };
 }
 
-function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, totalLeaks) {
-  locationName = String(locationName || '').trim();
-  plantName = String(plantName || '').trim() || 'All Plants';
+function escapeHtml_(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
+function computePlantMetrics_(records) {
+  records = records || [];
+  let totalLeaks = 0;
   let criticalCount = 0;
   let majorCount = 0;
   let minorCount = 0;
@@ -1063,6 +1072,7 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
 
   records.forEach(function(r) {
     const qty = Number(r.quantity) > 0 ? Number(r.quantity) : 1;
+    totalLeaks += qty;
     const sev = String(r.severity || '').toLowerCase();
     if (sev === 'critical') criticalCount += qty;
     else if (sev === 'major') majorCount += qty;
@@ -1111,94 +1121,399 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     return { name: k, count: jointCounts[k] };
   }).sort(function(a, b) { return b.count - a.count; }).slice(0, 5);
 
-  let defectRowsHtml = '';
-  if (sortedDefects.length === 0) {
-    defectRowsHtml = '<tr><td colspan="3" style="padding:12px;text-align:center;color:#64748b;">No defect data recorded.</td></tr>';
-  } else {
-    sortedDefects.forEach(function(d, idx) {
-      const barColor = idx === 0 ? '#4f46e5' : idx === 1 ? '#06b6d4' : '#64748b';
-      defectRowsHtml += [
-        '<tr style="border-bottom:1px solid #f1f5f9;">',
-        '  <td style="padding:10px 12px;color:#1e293b;font-weight:600;font-size:13px;">' + d.name + '</td>',
-        '  <td style="padding:10px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">' + d.count + '</td>',
-        '  <td style="padding:10px 12px;width:140px;">',
-        '    <div style="display:flex;align-items:center;gap:8px;">',
-        '      <div style="flex:1;background:#e2e8f0;border-radius:999px;height:8px;overflow:hidden;">',
-        '        <div style="background:' + barColor + ';width:' + Math.min(100, d.pct) + '%;height:8px;border-radius:999px;"></div>',
-        '      </div>',
-        '      <span style="font-size:11px;font-weight:700;color:#475569;width:32px;text-align:right;">' + d.pct + '%</span>',
-        '    </div>',
-        '  </td>',
-        '</tr>'
-      ].join('');
-    });
+  return {
+    totalLeaks: totalLeaks,
+    criticalCount: criticalCount,
+    majorCount: majorCount,
+    minorCount: minorCount,
+    reworkCount: reworkCount,
+    scrapCount: scrapCount,
+    acceptedCount: acceptedCount,
+    sortedDefects: sortedDefects,
+    sortedUnits: sortedUnits,
+    sortedLines: sortedLines,
+    sortedShifts: sortedShifts,
+    sortedJoints: sortedJoints
+  };
+}
+
+function buildSinglePlantSectionHtml_(grp, monthLabel, isMultiPlant) {
+  const plantName = escapeHtml_(grp.plant || 'PGTL');
+  const locationName = escapeHtml_(grp.location || 'Pune');
+  const records = grp.records || [];
+  const metrics = computePlantMetrics_(records);
+  const totalLeaks = metrics.totalLeaks;
+
+  if (totalLeaks === 0) {
+    return [
+      '<div style="background:#f0fdf4;border:1px solid #86efac;border-left:5px solid #22c55e;border-radius:10px;padding:22px 24px;margin-bottom:18px;">',
+      '  <div style="display:inline-block;background:#22c55e;color:#ffffff;font-size:11px;font-weight:900;padding:3px 10px;border-radius:999px;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:10px;">',
+      '    ZERO DEFECT STATUS',
+      '  </div>',
+      '  <div style="font-size:16px;font-weight:800;color:#15803d;line-height:1.4;margin-bottom:8px;">',
+      '    &#9989; No leakage entries have been recorded in the AC Leakage Monitoring System for this month.',
+      '  </div>',
+      '  <div style="font-size:13px;color:#166534;line-height:1.6;">',
+      '    During the reporting month of <b>' + escapeHtml_(monthLabel) + '</b>, all production lines and shifts operated completely leak-free with <b>0 defect entries logged</b> for <b>' + plantName + ' (' + locationName + ')</b>.',
+      '  </div>',
+      '  <div style="margin-top:14px;padding-top:12px;border-top:1px solid #bbf7d0;display:flex;gap:18px;font-size:12px;color:#15803d;">',
+      '    <span><b>Plant:</b> ' + plantName + '</span>',
+      '    <span><b>Location:</b> ' + locationName + '</span>',
+      '    <span><b>Monthly Incidents:</b> 0 (Clean Operation)</span>',
+      '  </div>',
+      '</div>'
+    ].join('\n');
   }
+
+  // Active defects tables
+  let defectRowsHtml = '';
+  metrics.sortedDefects.forEach(function(d, idx) {
+    const barColor = idx === 0 ? '#4f46e5' : idx === 1 ? '#06b6d4' : '#64748b';
+    defectRowsHtml += [
+      '<tr style="border-bottom:1px solid #f1f5f9;">',
+      '  <td style="padding:10px 12px;color:#1e293b;font-weight:600;font-size:13px;">' + escapeHtml_(d.name) + '</td>',
+      '  <td style="padding:10px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">' + d.count + '</td>',
+      '  <td style="padding:10px 12px;width:140px;">',
+      '    <div style="display:flex;align-items:center;gap:8px;">',
+      '      <div style="flex:1;background:#e2e8f0;border-radius:999px;height:8px;overflow:hidden;">',
+      '        <div style="background:' + barColor + ';width:' + Math.min(100, d.pct) + '%;height:8px;border-radius:999px;"></div>',
+      '      </div>',
+      '      <span style="font-size:11px;font-weight:700;color:#475569;width:32px;text-align:right;">' + d.pct + '%</span>',
+      '    </div>',
+      '  </td>',
+      '</tr>'
+    ].join('');
+  });
 
   let unitRowsHtml = '';
-  if (sortedUnits.length === 0) {
-    unitRowsHtml = '<tr><td colspan="3" style="padding:12px;text-align:center;color:#64748b;">No unit data recorded.</td></tr>';
-  } else {
-    sortedUnits.forEach(function(u, idx) {
-      const barColor = idx === 0 ? '#10b981' : idx === 1 ? '#3b82f6' : '#8b5cf6';
-      unitRowsHtml += [
-        '<tr style="border-bottom:1px solid #f1f5f9;">',
-        '  <td style="padding:9px 12px;color:#1e293b;font-weight:600;font-size:13px;">' + u.name + '</td>',
-        '  <td style="padding:9px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">' + u.count + '</td>',
-        '  <td style="padding:9px 12px;width:120px;">',
-        '    <div style="display:flex;align-items:center;gap:6px;">',
-        '      <div style="flex:1;background:#e2e8f0;border-radius:999px;height:7px;overflow:hidden;">',
-        '        <div style="background:' + barColor + ';width:' + Math.min(100, u.pct) + '%;height:7px;border-radius:999px;"></div>',
-        '      </div>',
-        '      <span style="font-size:11px;font-weight:700;color:#475569;width:30px;text-align:right;">' + u.pct + '%</span>',
-        '    </div>',
-        '  </td>',
-        '</tr>'
-      ].join('');
-    });
-  }
+  metrics.sortedUnits.forEach(function(u, idx) {
+    const barColor = idx === 0 ? '#10b981' : idx === 1 ? '#3b82f6' : '#8b5cf6';
+    unitRowsHtml += [
+      '<tr style="border-bottom:1px solid #f1f5f9;">',
+      '  <td style="padding:9px 12px;color:#1e293b;font-weight:600;font-size:13px;">' + escapeHtml_(u.name) + '</td>',
+      '  <td style="padding:9px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">' + u.count + '</td>',
+      '  <td style="padding:9px 12px;width:120px;">',
+      '    <div style="display:flex;align-items:center;gap:6px;">',
+      '      <div style="flex:1;background:#e2e8f0;border-radius:999px;height:7px;overflow:hidden;">',
+      '        <div style="background:' + barColor + ';width:' + Math.min(100, u.pct) + '%;height:7px;border-radius:999px;"></div>',
+      '      </div>',
+      '      <span style="font-size:11px;font-weight:700;color:#475569;width:30px;text-align:right;">' + u.pct + '%</span>',
+      '    </div>',
+      '  </td>',
+      '</tr>'
+    ].join('');
+  });
 
   let lineRowsHtml = '';
-  if (sortedLines.length === 0) {
-    lineRowsHtml = '<tr><td colspan="2" style="padding:12px;text-align:center;color:#64748b;">No line records.</td></tr>';
-  } else {
-    sortedLines.forEach(function(l) {
-      lineRowsHtml += [
-        '<tr style="border-bottom:1px solid #f1f5f9;">',
-        '  <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">' + l.name + '</td>',
-        '  <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">' + l.count + '</td>',
-        '</tr>'
-      ].join('');
-    });
-  }
+  metrics.sortedLines.forEach(function(l) {
+    lineRowsHtml += [
+      '<tr style="border-bottom:1px solid #f1f5f9;">',
+      '  <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">' + escapeHtml_(l.name) + '</td>',
+      '  <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">' + l.count + '</td>',
+      '</tr>'
+    ].join('');
+  });
 
   let shiftRowsHtml = '';
-  if (sortedShifts.length === 0) {
-    shiftRowsHtml = '<tr><td colspan="2" style="padding:12px;text-align:center;color:#64748b;">No shift records.</td></tr>';
-  } else {
-    sortedShifts.forEach(function(s) {
-      shiftRowsHtml += [
-        '<tr style="border-bottom:1px solid #f1f5f9;">',
-        '  <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">' + s.name + '</td>',
-        '  <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">' + s.count + '</td>',
-        '</tr>'
-      ].join('');
-    });
-  }
+  metrics.sortedShifts.forEach(function(s) {
+    shiftRowsHtml += [
+      '<tr style="border-bottom:1px solid #f1f5f9;">',
+      '  <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">' + escapeHtml_(s.name) + '</td>',
+      '  <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">' + s.count + '</td>',
+      '</tr>'
+    ].join('');
+  });
 
   let jointRowsHtml = '';
-  if (sortedJoints.length > 0) {
-    sortedJoints.forEach(function(j) {
+  if (metrics.sortedJoints.length > 0) {
+    metrics.sortedJoints.forEach(function(j) {
       jointRowsHtml += [
         '<tr style="border-bottom:1px solid #f1f5f9;">',
-        '  <td style="padding:8px 12px;color:#334155;font-weight:600;font-size:12px;">' + j.name + '</td>',
+        '  <td style="padding:8px 12px;color:#334155;font-weight:600;font-size:12px;">' + escapeHtml_(j.name) + '</td>',
         '  <td style="padding:8px 12px;text-align:right;font-weight:700;color:#dc2626;font-size:12px;">' + j.count + '</td>',
         '</tr>'
       ].join('');
     });
   }
 
-   const generatedDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata', 'dd MMM yyyy, hh:mm a');
-  const locBadge = '<span style="display:inline-block;background-color:#334155;background:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">LOCATION:</b> ' + (locationName || 'Corporate') + '</span>';
+  return [
+    '<!-- KPI Metric Cards Grid (6 cards) -->',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:20px;">',
+    '  <tr>',
+    '    <td width="33.33%" style="padding:4px;">',
+    '      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '        <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;">TOTAL LEAKS</div>',
+    '        <div style="font-size:24px;font-weight:900;color:#1e3a8a;margin-top:2px;">' + totalLeaks + '</div>',
+    '      </div>',
+    '    </td>',
+    '    <td width="33.33%" style="padding:4px;">',
+    '      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '        <div style="font-size:11px;font-weight:700;color:#b91c1c;text-transform:uppercase;">CRITICAL</div>',
+    '        <div style="font-size:24px;font-weight:900;color:#991b1b;margin-top:2px;">' + metrics.criticalCount + '</div>',
+    '      </div>',
+    '    </td>',
+    '    <td width="33.33%" style="padding:4px;">',
+    '      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '        <div style="font-size:11px;font-weight:700;color:#c2410c;text-transform:uppercase;">MAJOR</div>',
+    '        <div style="font-size:24px;font-weight:900;color:#9a3412;margin-top:2px;">' + metrics.majorCount + '</div>',
+    '      </div>',
+    '    </td>',
+    '  </tr>',
+    '  <tr>',
+    '    <td width="33.33%" style="padding:4px;">',
+    '      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '        <div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;">MINOR</div>',
+    '        <div style="font-size:24px;font-weight:900;color:#166534;margin-top:2px;">' + metrics.minorCount + '</div>',
+    '      </div>',
+    '    </td>',
+    '    <td width="33.33%" style="padding:4px;">',
+    '      <div style="background:#fefce8;border:1px solid #fef08a;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '        <div style="font-size:11px;font-weight:700;color:#a16207;text-transform:uppercase;">REWORK</div>',
+    '        <div style="font-size:24px;font-weight:900;color:#854d0e;margin-top:2px;">' + metrics.reworkCount + '</div>',
+    '      </div>',
+    '    </td>',
+    '    <td width="33.33%" style="padding:4px;">',
+    '      <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:12px 8px;text-align:center;">',
+    '        <div style="font-size:11px;font-weight:700;color:#be185d;text-transform:uppercase;">SCRAP</div>',
+    '        <div style="font-size:24px;font-weight:900;color:#9d174d;margin-top:2px;">' + metrics.scrapCount + '</div>',
+    '      </div>',
+    '    </td>',
+    '  </tr>',
+    '</table>',
+    '',
+    '<!-- Unit Type & Defect Breakdown -->',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:20px;">',
+    '  <tr>',
+    '    <td width="50%" valign="top" style="padding-right:8px;">',
+    '      <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Unit Type Breakdown</div>',
+    '      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
+    '        <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
+    '          <tr>',
+    '            <th style="padding:8px 10px;text-align:left;">Unit Type</th>',
+    '            <th style="padding:8px 6px;text-align:center;">Count</th>',
+    '            <th style="padding:8px 10px;text-align:left;">Share</th>',
+    '          </tr>',
+    '        </thead>',
+    '        <tbody>' + (unitRowsHtml || '<tr><td colspan="3" style="padding:10px;text-align:center;color:#64748b;">No unit data.</td></tr>') + '</tbody>',
+    '      </table>',
+    '    </td>',
+    '    <td width="50%" valign="top" style="padding-left:8px;">',
+    '      <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Defect Categories</div>',
+    '      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
+    '        <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
+    '          <tr>',
+    '            <th style="padding:8px 10px;text-align:left;">Category</th>',
+    '            <th style="padding:8px 6px;text-align:center;">Count</th>',
+    '            <th style="padding:8px 10px;text-align:left;">Share</th>',
+    '          </tr>',
+    '        </thead>',
+    '        <tbody>' + (defectRowsHtml || '<tr><td colspan="3" style="padding:10px;text-align:center;color:#64748b;">No defect data.</td></tr>') + '</tbody>',
+    '      </table>',
+    '    </td>',
+    '  </tr>',
+    '</table>',
+    '',
+    '<!-- Line Breakdown & Shift Tables -->',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:18px;">',
+    '  <tr>',
+    '    <td width="50%" valign="top" style="padding-right:8px;">',
+    '      <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Line Breakdown</div>',
+    '      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
+    '        <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
+    '          <tr>',
+    '            <th style="padding:8px 12px;text-align:left;">Line</th>',
+    '            <th style="padding:8px 12px;text-align:right;">Leaks</th>',
+    '          </tr>',
+    '        </thead>',
+    '        <tbody>' + (lineRowsHtml || '<tr><td colspan="2" style="padding:10px;text-align:center;color:#64748b;">No line records.</td></tr>') + '</tbody>',
+    '      </table>',
+    '    </td>',
+    '    <td width="50%" valign="top" style="padding-left:8px;">',
+    '      <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Shift Distribution</div>',
+    '      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
+    '        <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
+    '          <tr>',
+    '            <th style="padding:8px 12px;text-align:left;">Shift</th>',
+    '            <th style="padding:8px 12px;text-align:right;">Leaks</th>',
+    '          </tr>',
+    '        </thead>',
+    '        <tbody>' + (shiftRowsHtml || '<tr><td colspan="2" style="padding:10px;text-align:center;color:#64748b;">No shift records.</td></tr>') + '</tbody>',
+    '      </table>',
+    '    </td>',
+    '  </tr>',
+    '</table>',
+    jointRowsHtml ? [
+      '<div style="margin-bottom:18px;">',
+      '  <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Top Leakage Joints</div>',
+      '  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
+      '    <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
+      '      <tr>',
+      '        <th style="padding:8px 12px;text-align:left;">Joint / Location</th>',
+      '        <th style="padding:8px 12px;text-align:right;">Leak Frequency</th>',
+      '      </tr>',
+      '    </thead>',
+      '    <tbody>' + jointRowsHtml + '</tbody>',
+      '  </table>',
+      '</div>'
+    ].join('') : ''
+  ].join('\n');
+}
+
+function buildMonthlyReportHtml_(plantOrGroups, locationName, monthLabel, records, totalLeaks) {
+  let groups = [];
+  if (Array.isArray(plantOrGroups)) {
+    groups = plantOrGroups;
+  } else {
+    groups = [{
+      plant: String(plantOrGroups || 'PGTL').trim(),
+      location: String(locationName || 'Pune').trim(),
+      records: records || []
+    }];
+  }
+
+  // Calculate grand totals across all plants in this email
+  let grandTotalLeaks = 0;
+  let grandCritical = 0;
+  let grandMajor = 0;
+  let grandMinor = 0;
+  let grandRework = 0;
+  let grandScrap = 0;
+  let grandAccepted = 0;
+
+  const groupMetricsList = groups.map(function(grp) {
+    const met = computePlantMetrics_(grp.records || []);
+    grandTotalLeaks += met.totalLeaks;
+    grandCritical += met.criticalCount;
+    grandMajor += met.majorCount;
+    grandMinor += met.minorCount;
+    grandRework += met.reworkCount;
+    grandScrap += met.scrapCount;
+    grandAccepted += met.acceptedCount;
+    return {
+      grp: grp,
+      metrics: met
+    };
+  });
+
+  const isMultiPlant = groups.length > 1;
+  const generatedDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata', 'dd MMM yyyy, hh:mm a');
+
+  // Locations label
+  const uniqueLocations = [];
+  groups.forEach(function(g) {
+    const loc = g.location || 'Pune';
+    if (uniqueLocations.indexOf(loc) < 0) uniqueLocations.push(loc);
+  });
+  const locDisplay = uniqueLocations.join(', ');
+
+  // Plants label
+  const plantNames = groups.map(function(g) { return g.plant; });
+  const plantDisplay = isMultiPlant ? plantNames.join(', ') : (plantNames[0] || 'PGTL');
+
+  // Header Subtitle Badges
+  const locBadge = '<span style="display:inline-block;background-color:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">LOCATION:</b> ' + escapeHtml_(locDisplay) + '</span>';
+  const plantBadge = '<span style="display:inline-block;background-color:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">' + (isMultiPlant ? 'PLANTS (' + groups.length + '):' : 'PLANT:') + '</b> ' + escapeHtml_(plantDisplay) + '</span>';
+  const periodBadge = '<span style="display:inline-block;background-color:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ' + escapeHtml_(monthLabel) + '</span>';
+
+  // Multi-Plant Executive Overview Table
+  let multiPlantSummaryTable = '';
+  if (isMultiPlant) {
+    const summaryRows = groupMetricsList.map(function(item) {
+      const pName = escapeHtml_(item.grp.plant);
+      const lName = escapeHtml_(item.grp.location);
+      const m = item.metrics;
+      const isClean = m.totalLeaks === 0;
+      const statusBadge = isClean
+        ? '<span style="display:inline-block;background:#dcfce7;color:#166534;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">&#9989; Zero Leakage</span>'
+        : '<span style="display:inline-block;background:#fee2e2;color:#991b1b;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">&#9888;&#65039; ' + m.totalLeaks + ' Leaks Logged</span>';
+
+      return [
+        '<tr style="border-bottom:1px solid #e2e8f0;">',
+        '  <td style="padding:10px 12px;font-weight:700;color:#0f172a;">🏢 ' + pName + '</td>',
+        '  <td style="padding:10px 8px;color:#475569;">' + lName + '</td>',
+        '  <td style="padding:10px 8px;text-align:center;font-weight:800;font-size:13px;color:' + (isClean ? '#166534' : '#1e3a8a') + ';">' + m.totalLeaks + '</td>',
+        '  <td style="padding:10px 8px;text-align:center;font-weight:700;color:#991b1b;">' + m.criticalCount + '</td>',
+        '  <td style="padding:10px 8px;text-align:center;font-weight:700;color:#9a3412;">' + m.majorCount + '</td>',
+        '  <td style="padding:10px 8px;text-align:center;font-weight:700;color:#166534;">' + m.minorCount + '</td>',
+        '  <td style="padding:10px 12px;">' + statusBadge + '</td>',
+        '</tr>'
+      ].join('');
+    }).join('\n');
+
+    multiPlantSummaryTable = [
+      '<!-- Multi-Plant Executive Overview Table -->',
+      '<div style="margin-bottom:26px;">',
+      '  <div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:10px;border-bottom:2px solid #3b82f6;padding-bottom:6px;display:flex;justify-content:space-between;align-items:center;">',
+      '    <span>Executive Multi-Plant Performance Comparison</span>',
+      '    <span style="font-size:12px;font-weight:700;color:#3b82f6;">' + groups.length + ' Plants Monitored</span>',
+      '  </div>',
+      '  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;font-size:12px;width:100%;">',
+      '    <thead style="background:#1e293b;color:#ffffff;text-transform:uppercase;font-size:11px;">',
+      '      <tr>',
+      '        <th style="padding:10px 12px;text-align:left;">Plant Name</th>',
+      '        <th style="padding:10px 8px;text-align:left;">Location</th>',
+      '        <th style="padding:10px 8px;text-align:center;">Total Leaks</th>',
+      '        <th style="padding:10px 8px;text-align:center;">Critical</th>',
+      '        <th style="padding:10px 8px;text-align:center;">Major</th>',
+      '        <th style="padding:10px 8px;text-align:center;">Minor</th>',
+      '        <th style="padding:10px 12px;text-align:left;">Monthly Status</th>',
+      '      </tr>',
+      '    </thead>',
+      '    <tbody>',
+      summaryRows,
+      '      <tr style="background:#f1f5f9;font-weight:800;border-top:2px solid #94a3b8;">',
+      '        <td style="padding:10px 12px;color:#0f172a;" colspan="2">TOTAL (ALL PLANTS CONSOLIDATED)</td>',
+      '        <td style="padding:10px 8px;text-align:center;font-size:13px;color:#1e3a8a;">' + grandTotalLeaks + '</td>',
+      '        <td style="padding:10px 8px;text-align:center;color:#991b1b;">' + grandCritical + '</td>',
+      '        <td style="padding:10px 8px;text-align:center;color:#9a3412;">' + grandMajor + '</td>',
+      '        <td style="padding:10px 8px;text-align:center;color:#166534;">' + grandMinor + '</td>',
+      '        <td style="padding:10px 12px;color:#334155;font-size:11px;">' + (grandTotalLeaks === 0 ? 'All Plants 100% Leak-Free' : grandTotalLeaks + ' Total Leaks') + '</td>',
+      '      </tr>',
+      '    </tbody>',
+      '  </table>',
+      '</div>'
+    ].join('\n');
+  }
+
+  // Render individual sections for each plant
+  const plantSectionsHtml = groups.map(function(grp) {
+    const pName = escapeHtml_(grp.plant);
+    const lName = escapeHtml_(grp.location);
+    const innerHtml = buildSinglePlantSectionHtml_(grp, monthLabel, isMultiPlant);
+
+    if (isMultiPlant) {
+      return [
+        '<div style="margin-bottom:28px;border:1px solid #e2e8f0;border-radius:12px;padding:20px;background:#ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.03);">',
+        '  <div style="border-bottom:2px solid #3b82f6;padding-bottom:10px;margin-bottom:16px;">',
+        '    <div style="font-size:11px;font-weight:900;color:#2563eb;text-transform:uppercase;letter-spacing:1px;">PLANT QUALITY PROFILE</div>',
+        '    <h2 style="margin:2px 0 0 0;font-size:18px;font-weight:800;color:#0f172a;">🏢 ' + pName + ' <span style="font-size:13px;font-weight:600;color:#64748b;">(' + lName + ')</span></h2>',
+        '  </div>',
+        innerHtml,
+        '</div>'
+      ].join('\n');
+    }
+    return innerHtml;
+  }).join('\n');
+
+  // Executive Header Callout Message
+  let executiveCallout = '';
+  if (isMultiPlant) {
+    executiveCallout = [
+      '<div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:22px;">',
+      '  <p style="margin:0;font-size:13px;color:#334155;line-height:1.6;">',
+      '    Consolidated performance overview for <b>' + escapeHtml_(plantDisplay) + '</b> (' + escapeHtml_(locDisplay) + ') during <b>' + escapeHtml_(monthLabel) + '</b>. Total of <b>' + grandTotalLeaks + '</b> leakage defect(s) logged across all ' + groups.length + ' monitored plants.',
+      '  </p>',
+      '</div>'
+    ].join('');
+  } else {
+    executiveCallout = [
+      '<div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:22px;">',
+      '  <p style="margin:0;font-size:13px;color:#334155;line-height:1.6;">',
+      '    Performance overview for <b>' + escapeHtml_(groups[0].plant) + ' (' + escapeHtml_(groups[0].location) + ')</b> during <b>' + escapeHtml_(monthLabel) + '</b>. Total of <b>' + grandTotalLeaks + '</b> leakage defect(s) logged across all production lines and shifts.',
+      '  </p>',
+      '</div>'
+    ].join('');
+  }
 
   return [
     '<!DOCTYPE html>',
@@ -1208,17 +1523,17 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     '  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;padding:24px 0;">',
     '    <tr>',
     '      <td align="center">',
-    '        <table role="presentation" width="100%" style="max-width:680px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);border:1px solid #e2e8f0;" cellspacing="0" cellpadding="0">',
+    '        <table role="presentation" width="100%" style="max-width:720px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);border:1px solid #e2e8f0;" cellspacing="0" cellpadding="0">',
     '          ',
-    '          <!-- Header Banner (Solid background for full Gmail & Outlook compatibility) -->',
+    '          <!-- Header Banner -->',
     '          <tr>',
     '            <td bgcolor="#1e293b" style="background-color:#1e293b !important;background:#1e293b;padding:28px 24px;text-align:left;color:#ffffff;border-bottom:3px solid #3b82f6;">',
     '              <div style="font-size:12px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">PG GROUP</div>',
-    '              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">Monthly AC Leakage Quality Report</h1>',
+    '              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">' + (isMultiPlant ? 'Monthly AC Leakage Quality Report — Consolidated' : 'Monthly AC Leakage Quality Report') + '</h1>',
     '              <div style="display:block;margin-top:10px;">',
     '                ' + locBadge,
-    '                <span style="display:inline-block;background-color:#334155;background:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">PLANT:</b> ' + plantName + '</span>',
-    '                <span style="display:inline-block;background-color:#334155;background:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ' + monthLabel + '</span>',
+    '                ' + plantBadge,
+    '                ' + periodBadge,
     '              </div>',
     '            </td>',
     '          </tr>',
@@ -1227,138 +1542,13 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     '          <tr>',
     '            <td style="padding:24px;">',
     '              ',
-    '              <!-- Executive Summary Callout -->',
-    '              <div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:22px;">',
-    '                <p style="margin:0;font-size:13px;color:#334155;line-height:1.6;">',
-    '                  Performance overview for <b>' + plantName + (locationName ? ' (' + locationName + ')' : '') + '</b> during <b>' + monthLabel + '</b>. Total of <b>' + totalLeaks + '</b> leakage defect(s) logged across all production lines and shifts.',
-    '                </p>',
-    '              </div>',
-    '              ',
-    '              <!-- KPI Metric Cards Grid (6 cards) -->',
-    '              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:22px;">',
-    '                <tr>',
-    '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 8px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;">TOTAL LEAKS</div>',
-    '                      <div style="font-size:24px;font-weight:900;color:#1e3a8a;margin-top:2px;">' + totalLeaks + '</div>',
-    '                    </div>',
-    '                  </td>',
-    '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 8px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#b91c1c;text-transform:uppercase;">CRITICAL</div>',
-    '                      <div style="font-size:24px;font-weight:900;color:#991b1b;margin-top:2px;">' + criticalCount + '</div>',
-    '                    </div>',
-    '                  </td>',
-    '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 8px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#c2410c;text-transform:uppercase;">MAJOR</div>',
-    '                      <div style="font-size:24px;font-weight:900;color:#9a3412;margin-top:2px;">' + majorCount + '</div>',
-    '                    </div>',
-    '                  </td>',
-    '                </tr>',
-    '                <tr>',
-    '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 8px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;">MINOR</div>',
-    '                      <div style="font-size:24px;font-weight:900;color:#166534;margin-top:2px;">' + minorCount + '</div>',
-    '                    </div>',
-    '                  </td>',
-    '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#fefce8;border:1px solid #fef08a;border-radius:10px;padding:12px 8px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#a16207;text-transform:uppercase;">REWORK</div>',
-    '                      <div style="font-size:24px;font-weight:900;color:#854d0e;margin-top:2px;">' + reworkCount + '</div>',
-    '                    </div>',
-    '                  </td>',
-    '                  <td width="33.33%" style="padding:4px;">',
-    '                    <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:12px 8px;text-align:center;">',
-    '                      <div style="font-size:11px;font-weight:700;color:#be185d;text-transform:uppercase;">SCRAP</div>',
-    '                      <div style="font-size:24px;font-weight:900;color:#9d174d;margin-top:2px;">' + scrapCount + '</div>',
-    '                    </div>',
-    '                  </td>',
-    '                </tr>',
-    '              </table>',
-    '              ',
-    '              <!-- Unit Type & Defect Breakdown (Two Columns) -->',
-    '              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:22px;">',
-    '                <tr>',
-    '                  <td width="50%" valign="top" style="padding-right:8px;">',
-    '                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Unit Type Breakdown</div>',
-    '                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
-    '                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
-    '                        <tr>',
-    '                          <th style="padding:8px 10px;text-align:left;">Unit Type</th>',
-    '                          <th style="padding:8px 6px;text-align:center;">Count</th>',
-    '                          <th style="padding:8px 10px;text-align:left;">Share</th>',
-    '                        </tr>',
-    '                      </thead>',
-    '                      <tbody>' + unitRowsHtml + '</tbody>',
-    '                    </table>',
-    '                  </td>',
-    '                  <td width="50%" valign="top" style="padding-left:8px;">',
-    '                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Defect Categories</div>',
-    '                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
-    '                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
-    '                        <tr>',
-    '                          <th style="padding:8px 10px;text-align:left;">Category</th>',
-    '                          <th style="padding:8px 6px;text-align:center;">Count</th>',
-    '                          <th style="padding:8px 10px;text-align:left;">Share</th>',
-    '                        </tr>',
-    '                      </thead>',
-    '                      <tbody>' + defectRowsHtml + '</tbody>',
-    '                    </table>',
-    '                  </td>',
-    '                </tr>',
-    '              </table>',
-    '              ',
-    '              <!-- Line Breakdown & Shift Tables (Two Columns) -->',
-    '              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:20px;">',
-    '                <tr>',
-    '                  <td width="50%" valign="top" style="padding-right:8px;">',
-    '                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Line Breakdown</div>',
-    '                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
-    '                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
-    '                        <tr>',
-    '                          <th style="padding:8px 12px;text-align:left;">Line</th>',
-    '                          <th style="padding:8px 12px;text-align:right;">Leaks</th>',
-    '                        </tr>',
-    '                      </thead>',
-    '                      <tbody>' + lineRowsHtml + '</tbody>',
-    '                    </table>',
-    '                  </td>',
-    '                  <td width="50%" valign="top" style="padding-left:8px;">',
-    '                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Shift Distribution</div>',
-    '                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
-    '                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
-    '                        <tr>',
-    '                          <th style="padding:8px 12px;text-align:left;">Shift</th>',
-    '                          <th style="padding:8px 12px;text-align:right;">Leaks</th>',
-    '                        </tr>',
-    '                      </thead>',
-    '                      <tbody>' + shiftRowsHtml + '</tbody>',
-    '                    </table>',
-    '                  </td>',
-    '                </tr>',
-    '              </table>',
-    '              ',
-    '              ' + (jointRowsHtml ? [
-    '              <!-- Top Joint Leakage Points -->',
-    '              <div style="margin-bottom:20px;">',
-    '                <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Top Leakage Joints</div>',
-    '                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">',
-    '                  <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">',
-    '                    <tr>',
-    '                      <th style="padding:8px 12px;text-align:left;">Joint / Location</th>',
-    '                      <th style="padding:8px 12px;text-align:right;">Leak Frequency</th>',
-    '                    </tr>',
-    '                  </thead>',
-    '                  <tbody>' + jointRowsHtml + '</tbody>',
-    '                </table>',
-    '              </div>'
-    ].join('') : '') + '',
+    executiveCallout,
+    multiPlantSummaryTable,
+    plantSectionsHtml,
     '              ',
     '              <!-- PROMINENT ATTACHMENT CALLOUT BANNER -->',
     '              <div style="margin-top:20px;padding:12px 18px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;color:#166534;font-size:12px;line-height:1.5;">',
-    '                <div style="font-weight:800;font-size:12px;margin-bottom:3px;color:#15803d;letter-spacing:0.3px;">📊 EXCEL DETAILED REPORT ATTACHED (.xlsx)</div>',
+    '                <div style="font-weight:800;font-size:12px;margin-bottom:3px;color:#15803d;letter-spacing:0.3px;">📊 EXCEL DETAILED REPORT ATTACHED (.xls)</div>',
     '                <div>The complete defect dataset and executive summary workbook has been generated and attached to this email for your offline analysis and record keeping.</div>',
     '              </div>',
     '              ',
@@ -1384,170 +1574,409 @@ function buildMonthlyReportHtml_(plantName, locationName, monthLabel, records, t
     '  </table>',
     '</body>',
     '</html>'
-  ].join('');
+  ].join('\n');
 }
 
-function createMonthlyReportExcelAttachment_(plantName, locationName, monthLabel, records) {
-  const cleanPlant = (plantName || 'PGTL').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const cleanMonth = (monthLabel || 'Monthly_Report').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const fileName = 'PG_Group_AC_Leakage_Report_' + cleanPlant + '_' + cleanMonth + '.xlsx';
+function parseRecordDate_(ts) {
+  if (!ts) return null;
+  if (ts instanceof Date) return isNaN(ts.getTime()) ? null : ts;
+  const s = String(ts).trim();
+  if (!s) return null;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  const parts = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})(.*)$/);
+  if (parts) {
+    const d2 = new Date(Number(parts[3]), Number(parts[2]) - 1, Number(parts[1]));
+    if (!isNaN(d2.getTime())) return d2;
+  }
+  return null;
+}
 
-  let tempSs = null;
-  try {
-    tempSs = SpreadsheetApp.create('Temp_Monthly_Leakage_Export_' + cleanPlant + '_' + cleanMonth);
-    const ssId = tempSs.getId();
+function createMonthlyReportExcelAttachment_(plantOrGroups, locationName, monthLabel, records) {
+  let groups = [];
+  if (Array.isArray(plantOrGroups)) {
+    groups = plantOrGroups;
+  } else {
+    groups = [{
+      plant: String(plantOrGroups || 'PGTL').trim(),
+      location: String(locationName || 'Pune').trim(),
+      records: records || []
+    }];
+  }
 
-    // Sheet 1: Detailed Defect Records
-    const dataSheet = tempSs.getSheets()[0];
-    dataSheet.setName('Defect Records');
+  const isMulti = groups.length > 1;
+  const cleanMonth = String(monthLabel || 'Monthly_Report').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanTag = isMulti ? 'Consolidated_MultiPlant' : String(groups[0].plant || 'PGTL').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fileName = 'PG_Group_AC_Leakage_Report_' + cleanTag + '_' + cleanMonth + '.xls';
 
-    const headers = [
-      'Timestamp',
-      'Location',
-      'Plant',
-      'Unit Type',
-      'Production Line',
-      'Defect Type',
-      'Joint / Location',
-      'Severity',
-      'Shift',
-      'Action Taken',
-      'Quantity',
-      'Operator Name',
-      'Reported By'
-    ];
+  const escapeXml = function(val) {
+    if (val == null) return '';
+    return String(val)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  };
 
-    const rows = [headers];
-    let totalQty = 0;
-    let criticalCount = 0;
-    let majorCount = 0;
-    let minorCount = 0;
-    let reworkCount = 0;
-    let scrapCount = 0;
-    let acceptedCount = 0;
+  const defectRowsXml = [];
+  let grandTotalQty = 0;
+  let grandCritical = 0;
+  let grandMajor = 0;
+  let grandMinor = 0;
+  let grandRework = 0;
+  let grandScrap = 0;
+  let grandAccepted = 0;
 
-    records.forEach(function(r) {
+  groups.forEach(function(grp) {
+    const pName = grp.plant || 'PGTL';
+    const lName = grp.location || 'Pune';
+    const recs = grp.records || [];
+
+    if (recs.length === 0) {
+      defectRowsXml.push([
+        '    <Row ss:Height="20">',
+        '      <Cell ss:StyleID="DataCellCenter"><Data ss:Type="String">-</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(lName) + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(pName) + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell" ss:MergeAcross="9"><Data ss:Type="String">&#9989; No leakage entries have been recorded in the AC Leakage Monitoring System for this month (Zero Defects Logged).</Data></Cell>',
+        '    </Row>'
+      ].join(''));
+      return;
+    }
+
+    recs.forEach(function(r) {
       const q = Number(r.quantity) > 0 ? Number(r.quantity) : 1;
-      totalQty += q;
+      grandTotalQty += q;
       const sev = String(r.severity || '').toLowerCase();
-      if (sev === 'critical') criticalCount += q;
-      else if (sev === 'major') majorCount += q;
-      else minorCount += q;
+      let sevStyle = 'DataCellCenter';
+      if (sev === 'critical') { grandCritical += q; sevStyle = 'CriticalBadge'; }
+      else if (sev === 'major') { grandMajor += q; sevStyle = 'MajorBadge'; }
+      else { grandMinor += q; sevStyle = 'MinorBadge'; }
 
       const act = String(r.action || '').toLowerCase();
-      if (act.indexOf('rework') >= 0) reworkCount += q;
-      else if (act.indexOf('scrap') >= 0) scrapCount += q;
-      else if (act.indexOf('accept') >= 0) acceptedCount += q;
+      if (act.indexOf('rework') >= 0) grandRework += q;
+      else if (act.indexOf('scrap') >= 0) grandScrap += q;
+      else if (act.indexOf('accept') >= 0) grandAccepted += q;
 
       let formattedDate = '';
-      if (r.timestamp) {
+      const dt = parseRecordDate_(r.timestamp);
+      if (dt) {
         try {
-          formattedDate = Utilities.formatDate(new Date(r.timestamp), Session.getScriptTimeZone() || 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
+          formattedDate = Utilities.formatDate(dt, Session.getScriptTimeZone() || 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
         } catch (_) {
           formattedDate = String(r.timestamp);
         }
+      } else {
+        formattedDate = String(r.timestamp || '');
       }
 
-      rows.push([
-        formattedDate,
-        String(r.location || locationName || 'Pune'),
-        String(r.plant || plantName || 'PGTL'),
-        String(r.type || '-'),
-        String(r.productionLine || '-'),
-        String(r.defectType || '-'),
-        String(r.joint || '-'),
-        String(r.severity || '-'),
-        String(r.shift || '-'),
-        String(r.action || '-'),
-        q,
-        String(r.operatorName || '-'),
-        String(r.reportedBy || '-')
-      ]);
+      defectRowsXml.push([
+        '    <Row ss:Height="19">',
+        '      <Cell ss:StyleID="DataCellCenter"><Data ss:Type="String">' + escapeXml(formattedDate) + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(r.location || lName) + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(r.plant || pName) + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(r.type || '-') + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(r.productionLine || '-') + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(r.defectType || '-') + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(r.joint || '-') + '</Data></Cell>',
+        '      <Cell ss:StyleID="' + sevStyle + '"><Data ss:Type="String">' + escapeXml(r.severity || '-') + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCellCenter"><Data ss:Type="String">' + escapeXml(r.shift || '-') + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(r.action || '-') + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + q + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(r.operatorName || '-') + '</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(r.reportedBy || '-') + '</Data></Cell>',
+        '    </Row>'
+      ].join(''));
+    });
+  });
+
+  const generatedTime = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
+
+  // Executive summary worksheet rows
+  const executiveTableRowsXml = [];
+  if (isMulti) {
+    executiveTableRowsXml.push([
+      '   <Row ss:Height="22">',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Plant Name</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Location</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Total Leaks</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Critical</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Major</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Minor</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Monthly Status</Data></Cell>',
+      '   </Row>'
+    ].join(''));
+
+    groups.forEach(function(grp) {
+      const met = computePlantMetrics_(grp.records || []);
+      const statusText = met.totalLeaks === 0 ? 'Zero Leakage Logged' : met.totalLeaks + ' Leaks Logged';
+      executiveTableRowsXml.push([
+        '   <Row ss:Height="20">',
+        '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(grp.plant) + '</Data></Cell>',
+        '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(grp.location) + '</Data></Cell>',
+        '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + met.totalLeaks + '</Data></Cell>',
+        '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + met.criticalCount + '</Data></Cell>',
+        '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + met.majorCount + '</Data></Cell>',
+        '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + met.minorCount + '</Data></Cell>',
+        '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(statusText) + '</Data></Cell>',
+        '   </Row>'
+      ].join(''));
     });
 
-    if (rows.length === 1) {
-      rows.push(['No defect records found for this period.', '', '', '', '', '', '', '', '', '', 0, '', '']);
-    }
-
-    const range = dataSheet.getRange(1, 1, rows.length, headers.length);
-    range.setValues(rows);
-
-    // Styling Header
-    const headerRange = dataSheet.getRange(1, 1, 1, headers.length);
-    headerRange.setBackground('#1e293b');
-    headerRange.setFontColor('#ffffff');
-    headerRange.setFontWeight('bold');
-    headerRange.setHorizontalAlignment('center');
-
-    // Freeze header row
-    dataSheet.setFrozenRows(1);
-
-    // Sheet 2: Executive Summary & KPIs
-    const summarySheet = tempSs.insertSheet('Executive Summary');
-    const summaryData = [
-      ['PG GROUP - AC LEAKAGE MONITORING SYSTEM', ''],
-      ['Monthly Performance Executive Summary', ''],
-      ['', ''],
-      ['Report Parameter', 'Value'],
-      ['Plant Name', String(plantName || 'All Plants')],
-      ['Location', String(locationName || 'Pune')],
-      ['Month / Year', String(monthLabel || '')],
-      ['Generated On', Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss')],
-      ['', ''],
-      ['Key Performance Indicator (KPI)', 'Count'],
-      ['Total Leakage Incidents (Qty)', totalQty],
-      ['Critical Severity Leaks', criticalCount],
-      ['Major Severity Leaks', majorCount],
-      ['Minor Severity Leaks', minorCount],
-      ['Rework Action Items', reworkCount],
-      ['Scrapped Units', scrapCount],
-      ['Accepted / Normal', acceptedCount]
-    ];
-
-    summarySheet.getRange(1, 1, summaryData.length, 2).setValues(summaryData);
-    summarySheet.getRange('A1:B1').merge().setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold').setFontSize(14).setHorizontalAlignment('center');
-    summarySheet.getRange('A2:B2').merge().setBackground('#334155').setFontColor('#ffffff').setFontSize(11).setHorizontalAlignment('center');
-    summarySheet.getRange('A4:B4').setBackground('#e2e8f0').setFontWeight('bold');
-    summarySheet.getRange('A10:B10').setBackground('#e2e8f0').setFontWeight('bold');
-    summarySheet.setColumnWidth(1, 260);
-    summarySheet.setColumnWidth(2, 160);
-
-    SpreadsheetApp.flush();
-
-    // Export to Excel .xlsx via OAuth token
-    const url = 'https://docs.google.com/feeds/download/spreadsheets/Export?key=' + ssId + '&exportFormat=xlsx';
-    const params = {
-      method: 'get',
-      headers: { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
-      muteHttpExceptions: true
-    };
-    const res = UrlFetchApp.fetch(url, params);
-
-    if (res.getResponseCode() === 200) {
-      const blob = res.getBlob().setName(fileName);
-      try {
-        DriveApp.getFileById(ssId).setTrashed(true);
-      } catch (_) {}
-      return blob;
-    }
-  } catch (err) {
-    Logger.log('createMonthlyReportExcelAttachment_ error: ' + err);
-  } finally {
-    if (tempSs) {
-      try {
-        DriveApp.getFileById(tempSs.getId()).setTrashed(true);
-      } catch (_) {}
-    }
+    executiveTableRowsXml.push([
+      '   <Row ss:Height="22">',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">TOTAL (ALL PLANTS)</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">All Locations</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="Number">' + grandTotalQty + '</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="Number">' + grandCritical + '</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="Number">' + grandMajor + '</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="Number">' + grandMinor + '</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">' + (grandTotalQty === 0 ? 'All Plants Leak-Free' : 'Consolidated Total') + '</Data></Cell>',
+      '   </Row>'
+    ].join(''));
+  } else {
+    const singleGrp = groups[0] || {};
+    executiveTableRowsXml.push([
+      '   <Row ss:Height="22">',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Report Scope Parameter</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Value</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Plant Name</Data></Cell>',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(singleGrp.plant || 'PGTL') + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Location</Data></Cell>',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(singleGrp.location || 'Pune') + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Report Month / Year</Data></Cell>',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(monthLabel || '') + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Generated Timestamp</Data></Cell>',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(generatedTime) + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="12"><Cell ss:StyleID="DataCell"/><Cell ss:StyleID="DataCell"/></Row>',
+      '   <Row ss:Height="22">',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Key Performance Indicator (KPI)</Data></Cell>',
+      '    <Cell ss:StyleID="SectionHeader"><Data ss:Type="String">Total Count (Qty)</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Total Leakage Incidents</Data></Cell>',
+      '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + grandTotalQty + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Critical Severity Leaks</Data></Cell>',
+      '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + grandCritical + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Major Severity Leaks</Data></Cell>',
+      '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + grandMajor + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Minor Severity Leaks</Data></Cell>',
+      '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + grandMinor + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Rework Action Units</Data></Cell>',
+      '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + grandRework + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Scrapped Units</Data></Cell>',
+      '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + grandScrap + '</Data></Cell>',
+      '   </Row>',
+      '   <Row ss:Height="20">',
+      '    <Cell ss:StyleID="DataCell"><Data ss:Type="String">Accepted / Normal Units</Data></Cell>',
+      '    <Cell ss:StyleID="DataCellNumber"><Data ss:Type="Number">' + grandAccepted + '</Data></Cell>',
+      '   </Row>'
+    ].join(''));
   }
 
-  // Fallback to CSV format if XLSX export cannot be generated
-  return createMonthlyReportCsvBlob_(plantName, locationName, monthLabel, records);
+  const xml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<?mso-application progid="Excel.Sheet"?>',
+    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"',
+    ' xmlns:o="urn:schemas-microsoft-com:office:office"',
+    ' xmlns:x="urn:schemas-microsoft-com:office:excel"',
+    ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"',
+    ' xmlns:html="http://www.w3.org/TR/REC-html40">',
+    ' <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">',
+    '  <Author>PG Group Quality Team</Author>',
+    '  <LastAuthor>PG Group AC Leakage Monitoring System</LastAuthor>',
+    '  <Created>' + new Date().toISOString() + '</Created>',
+    '  <Company>PG GROUP</Company>',
+    ' </DocumentProperties>',
+    ' <Styles>',
+    '  <Style ss:ID="Default" ss:Name="Normal">',
+    '   <Alignment ss:Vertical="Center"/>',
+    '   <Font ss:FontName="Segoe UI" x:Family="Swiss" ss:Size="10" ss:Color="#1E293B"/>',
+    '  </Style>',
+    '  <Style ss:ID="HeaderStyle">',
+    '   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>',
+    '   <Borders>',
+    '    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F172A"/>',
+    '    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F172A"/>',
+    '    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F172A"/>',
+    '    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F172A"/>',
+    '   </Borders>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#FFFFFF" ss:Bold="1"/>',
+    '   <Interior ss:Color="#1E293B" ss:Pattern="Solid"/>',
+    '  </Style>',
+    '  <Style ss:ID="TitleStyle">',
+    '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="13" ss:Color="#FFFFFF" ss:Bold="1"/>',
+    '   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>',
+    '  </Style>',
+    '  <Style ss:ID="SubtitleStyle">',
+    '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#FFFFFF"/>',
+    '   <Interior ss:Color="#334155" ss:Pattern="Solid"/>',
+    '  </Style>',
+    '  <Style ss:ID="SectionHeader">',
+    '   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#0F172A" ss:Bold="1"/>',
+    '   <Interior ss:Color="#E2E8F0" ss:Pattern="Solid"/>',
+    '  </Style>',
+    '  <Style ss:ID="DataCell">',
+    '   <Borders>',
+    '    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '   </Borders>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#1E293B"/>',
+    '  </Style>',
+    '  <Style ss:ID="DataCellCenter">',
+    '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>',
+    '   <Borders>',
+    '    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '   </Borders>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#1E293B"/>',
+    '  </Style>',
+    '  <Style ss:ID="DataCellNumber">',
+    '   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>',
+    '   <Borders>',
+    '    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '   </Borders>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#0F172A" ss:Bold="1"/>',
+    '   <NumberFormat ss:Format="#,##0"/>',
+    '  </Style>',
+    '  <Style ss:ID="CriticalBadge">',
+    '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>',
+    '   <Borders>',
+    '    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '   </Borders>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#991B1B" ss:Bold="1"/>',
+    '   <Interior ss:Color="#FEE2E2" ss:Pattern="Solid"/>',
+    '  </Style>',
+    '  <Style ss:ID="MajorBadge">',
+    '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>',
+    '   <Borders>',
+    '    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '   </Borders>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#9A3412" ss:Bold="1"/>',
+    '   <Interior ss:Color="#FFEDD5" ss:Pattern="Solid"/>',
+    '  </Style>',
+    '  <Style ss:ID="MinorBadge">',
+    '   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>',
+    '   <Borders>',
+    '    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>',
+    '   </Borders>',
+    '   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#166534" ss:Bold="1"/>',
+    '   <Interior ss:Color="#DCFCE7" ss:Pattern="Solid"/>',
+    '  </Style>',
+    ' </Styles>',
+    ' <Worksheet ss:Name="Defect Records">',
+    '  <Table ss:DefaultRowHeight="19">',
+    '   <Column ss:Width="135"/>',
+    '   <Column ss:Width="95"/>',
+    '   <Column ss:Width="85"/>',
+    '   <Column ss:Width="105"/>',
+    '   <Column ss:Width="115"/>',
+    '   <Column ss:Width="135"/>',
+    '   <Column ss:Width="115"/>',
+    '   <Column ss:Width="85"/>',
+    '   <Column ss:Width="65"/>',
+    '   <Column ss:Width="105"/>',
+    '   <Column ss:Width="65"/>',
+    '   <Column ss:Width="115"/>',
+    '   <Column ss:Width="115"/>',
+    '   <Row ss:Height="24">',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Timestamp</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Location</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Plant</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Unit Type</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Production Line</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Defect Type</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Joint / Location</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Severity</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Shift</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Action Taken</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Quantity</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Operator Name</Data></Cell>',
+    '    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Reported By</Data></Cell>',
+    '   </Row>',
+    defectRowsXml.join('\n'),
+    '  </Table>',
+    ' </Worksheet>',
+    ' <Worksheet ss:Name="Executive Summary">',
+    '  <Table ss:DefaultRowHeight="20">',
+    '   <Column ss:Width="220"/>',
+    '   <Column ss:Width="140"/>',
+    '   <Column ss:Width="100"/>',
+    '   <Column ss:Width="90"/>',
+    '   <Column ss:Width="90"/>',
+    '   <Column ss:Width="90"/>',
+    '   <Column ss:Width="160"/>',
+    '   <Row ss:Height="28">',
+    '    <Cell ss:StyleID="TitleStyle" ss:MergeAcross="' + (isMulti ? 6 : 1) + '"><Data ss:Type="String">PG GROUP - AC LEAKAGE MONITORING SYSTEM</Data></Cell>',
+    '   </Row>',
+    '   <Row ss:Height="22">',
+    '    <Cell ss:StyleID="SubtitleStyle" ss:MergeAcross="' + (isMulti ? 6 : 1) + '"><Data ss:Type="String">' + (isMulti ? 'Monthly Multi-Plant Executive Performance Summary' : 'Monthly Performance Executive Summary') + '</Data></Cell>',
+    '   </Row>',
+    '   <Row ss:Height="12"><Cell ss:StyleID="DataCell"/><Cell ss:StyleID="DataCell"/></Row>',
+    executiveTableRowsXml.join('\n'),
+    '  </Table>',
+    ' </Worksheet>',
+    '</Workbook>'
+  ].join('\n');
+
+  return Utilities.newBlob(xml, 'application/vnd.ms-excel', fileName);
 }
 
-function createMonthlyReportCsvBlob_(plantName, locationName, monthLabel, records) {
-  const cleanPlant = (plantName || 'PGTL').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const cleanMonth = (monthLabel || 'Monthly_Report').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const fileName = 'PG_Group_AC_Leakage_Report_' + cleanPlant + '_' + cleanMonth + '.csv';
+function createMonthlyReportCsvBlob_(plantOrGroups, locationName, monthLabel, records) {
+  let groups = [];
+  if (Array.isArray(plantOrGroups)) {
+    groups = plantOrGroups;
+  } else {
+    groups = [{
+      plant: String(plantOrGroups || 'PGTL').trim(),
+      location: String(locationName || 'Pune').trim(),
+      records: records || []
+    }];
+  }
+
+  const isMulti = groups.length > 1;
+  const cleanMonth = String(monthLabel || 'Monthly_Report').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanTag = isMulti ? 'Consolidated_MultiPlant' : String(groups[0].plant || 'PGTL').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fileName = 'PG_Group_AC_Leakage_Report_' + cleanTag + '_' + cleanMonth + '.csv';
 
   const headers = [
     'Timestamp',
@@ -1572,30 +2001,59 @@ function createMonthlyReportCsvBlob_(plantName, locationName, monthLabel, record
 
   const csvRows = [headers.map(escapeCsv).join(',')];
 
-  records.forEach(function(r) {
-    let formattedDate = '';
-    if (r.timestamp) {
-      try {
-        formattedDate = Utilities.formatDate(new Date(r.timestamp), Session.getScriptTimeZone() || 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
-      } catch (_) {
-        formattedDate = String(r.timestamp);
-      }
+  groups.forEach(function(grp) {
+    const pName = grp.plant || 'PGTL';
+    const lName = grp.location || 'Pune';
+    const recs = grp.records || [];
+
+    if (recs.length === 0) {
+      csvRows.push([
+        escapeCsv('N/A'),
+        escapeCsv(lName),
+        escapeCsv(pName),
+        escapeCsv('-'),
+        escapeCsv('-'),
+        escapeCsv('No leakage entries recorded in AC Leakage Monitoring System for this month'),
+        escapeCsv('-'),
+        escapeCsv('Normal'),
+        escapeCsv('-'),
+        escapeCsv('-'),
+        escapeCsv(0),
+        escapeCsv('-'),
+        escapeCsv('System')
+      ].join(','));
+      return;
     }
-    csvRows.push([
-      escapeCsv(formattedDate),
-      escapeCsv(r.location || locationName || 'Pune'),
-      escapeCsv(r.plant || plantName || 'PGTL'),
-      escapeCsv(r.type || '-'),
-      escapeCsv(r.productionLine || '-'),
-      escapeCsv(r.defectType || '-'),
-      escapeCsv(r.joint || '-'),
-      escapeCsv(r.severity || '-'),
-      escapeCsv(r.shift || '-'),
-      escapeCsv(r.action || '-'),
-      escapeCsv(Number(r.quantity) > 0 ? Number(r.quantity) : 1),
-      escapeCsv(r.operatorName || '-'),
-      escapeCsv(r.reportedBy || '-')
-    ].join(','));
+
+    recs.forEach(function(r) {
+      let formattedDate = '';
+      const dt = parseRecordDate_(r.timestamp);
+      if (dt) {
+        try {
+          formattedDate = Utilities.formatDate(dt, Session.getScriptTimeZone() || 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
+        } catch (_) {
+          formattedDate = String(r.timestamp);
+        }
+      } else {
+        formattedDate = String(r.timestamp || '');
+      }
+
+      csvRows.push([
+        escapeCsv(formattedDate),
+        escapeCsv(r.location || lName),
+        escapeCsv(r.plant || pName),
+        escapeCsv(r.type || '-'),
+        escapeCsv(r.productionLine || '-'),
+        escapeCsv(r.defectType || '-'),
+        escapeCsv(r.joint || '-'),
+        escapeCsv(r.severity || '-'),
+        escapeCsv(r.shift || '-'),
+        escapeCsv(r.action || '-'),
+        escapeCsv(Number(r.quantity) > 0 ? Number(r.quantity) : 1),
+        escapeCsv(r.operatorName || '-'),
+        escapeCsv(r.reportedBy || '-')
+      ].join(','));
+    });
   });
 
   return Utilities.newBlob(csvRows.join('\r\n'), 'text/csv', fileName);
@@ -1623,64 +2081,116 @@ function sendMonthlyPlantLeakageReports(options) {
     targetYear = targetYear || now.getFullYear();
   }
 
-  const startDate = new Date(targetYear, targetMonth - 1, 1, 0, 0, 0);
+  const startDate = new Date(targetYear, targetMonth - 1, 1, 0, 0, 0, 0);
   const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const monthLabel = monthNames[targetMonth - 1] + ' ' + targetYear;
 
   // Retrieve reports from sheet
-  const rawReports = getDefectReports_({ limit: 5000 }).reports || [];
+  const rawReports = getDefectReports_({ limit: 10000 }).reports || [];
+  
+  // Filter STRICTLY for target month & year
   const monthRecords = rawReports.filter(function(r) {
-    if (!r.timestamp) return false;
-    const dt = new Date(r.timestamp);
+    const dt = parseRecordDate_(r.timestamp);
+    if (!dt) return false;
     return dt >= startDate && dt <= endDate;
   });
 
-  // Group by plant and capture location
-  const plantGroups = {};
-  const plantLocations = {};
+  const targetLocationFilter = options.location ? String(options.location).trim() : '';
+  const targetPlantFilter = options.plant ? String(options.plant).trim() : '';
 
+  // Collect configured plants and locations
+  const plantRoutes = settings.plantRoutes || {};
+  const locationRoutes = settings.locationRoutes || {};
+  const config = getConfig_().config || {};
+  const knownLocations = config.locations || {};
+
+  // Build target groups: Map "plant___location" -> { plant, location, records: [] }
+  const groupsMap = {};
+
+  // 1. Seed from catalog hierarchy
+  Object.keys(knownLocations).forEach(function(locName) {
+    const plantsInLoc = (knownLocations[locName] && knownLocations[locName].plants) || {};
+    Object.keys(plantsInLoc).forEach(function(pName) {
+      const gKey = pName.toLowerCase() + '___' + locName.toLowerCase();
+      groupsMap[gKey] = { plant: pName, location: locName, records: [] };
+    });
+  });
+
+  // 2. Seed from plant master
+  const knownPlants = config.plants || {};
+  Object.keys(knownPlants).forEach(function(pName) {
+    const locs = (knownPlants[pName] && knownPlants[pName].locations) || ['Pune'];
+    locs.forEach(function(lName) {
+      const gKey = pName.toLowerCase() + '___' + lName.toLowerCase();
+      if (!groupsMap[gKey]) {
+        groupsMap[gKey] = { plant: pName, location: lName, records: [] };
+      }
+    });
+  });
+
+  // 3. Seed from plantRoutes
+  Object.keys(plantRoutes).forEach(function(pName) {
+    let loc = 'Pune';
+    Object.keys(knownLocations).forEach(function(l) {
+      if (knownLocations[l] && knownLocations[l].plants && knownLocations[l].plants[pName]) {
+        loc = l;
+      }
+    });
+    const gKey = pName.toLowerCase() + '___' + loc.toLowerCase();
+    if (!groupsMap[gKey]) {
+      groupsMap[gKey] = { plant: pName, location: loc, records: [] };
+    }
+  });
+
+  // Seed default if empty
+  if (Object.keys(groupsMap).length === 0) {
+    groupsMap['pgtl___pune'] = { plant: 'PGTL', location: 'Pune', records: [] };
+  }
+
+  // Populate month records into matching groups
   monthRecords.forEach(function(r) {
     const p = String(r.plant || 'PGTL').trim();
     const loc = String(r.location || 'Pune').trim();
-    if (!plantGroups[p]) plantGroups[p] = [];
-    plantGroups[p].push(r);
-    if (!plantLocations[p]) plantLocations[p] = loc;
+    const gKey = p.toLowerCase() + '___' + loc.toLowerCase();
+    if (!groupsMap[gKey]) {
+      groupsMap[gKey] = { plant: p, location: loc, records: [] };
+    }
+    groupsMap[gKey].records.push(r);
   });
 
-  // Ensure configured plants appear even if 0 leaks
-  const plantRoutes = settings.plantRoutes || {};
-  const locationRoutes = settings.locationRoutes || {};
-
-  Object.keys(plantRoutes).forEach(function(p) {
-    if (!plantGroups[p]) plantGroups[p] = [];
-    if (!plantLocations[p]) plantLocations[p] = 'Pune';
-  });
-  if (Object.keys(plantGroups).length === 0) {
-    plantGroups['PGTL'] = [];
-    plantLocations['PGTL'] = 'Pune';
+  // If specific plant and location was passed in options, ensure it exists
+  if (targetPlantFilter && targetPlantFilter !== '*' && targetLocationFilter && targetLocationFilter !== '*') {
+    const specificKey = targetPlantFilter.toLowerCase() + '___' + targetLocationFilter.toLowerCase();
+    if (!groupsMap[specificKey]) {
+      groupsMap[specificKey] = { plant: targetPlantFilter, location: targetLocationFilter, records: [] };
+    }
   }
 
-  const targetLocationFilter = options.location ? String(options.location).trim() : '';
-  const targetPlantFilter = options.plant ? String(options.plant).trim() : '';
+  // Group plants by destination recipient so that recipients receiving reports for
+  // multiple plants (e.g. global defaultTo, location-level routes, or All Plants test)
+  // receive ONE consolidated, clearly formatted email instead of multiple separate emails.
+  const recipientBatches = {};
   const emailResults = [];
 
-  Object.keys(plantGroups).forEach(function(plant) {
-    const location = plantLocations[plant] || 'Pune';
+  Object.keys(groupsMap).forEach(function(gKey) {
+    const grp = groupsMap[gKey];
+    const plant = grp.plant;
+    const location = grp.location;
 
-    if (targetLocationFilter && targetLocationFilter !== '*' && targetLocationFilter.toLowerCase() !== location.toLowerCase()) {
+    // Apply Location filter if specified
+    if (targetLocationFilter && targetLocationFilter !== '*' && location.toLowerCase() !== targetLocationFilter.toLowerCase()) {
       return;
     }
-    if (targetPlantFilter && targetPlantFilter !== '*' && targetPlantFilter.toLowerCase() !== plant.toLowerCase()) {
+    // Apply Plant filter if specified
+    if (targetPlantFilter && targetPlantFilter !== '*' && plant.toLowerCase() !== targetPlantFilter.toLowerCase()) {
       return;
     }
-
-    const recs = plantGroups[plant] || [];
 
     // Hierarchical email resolution:
     // 1. Specific test override
     // 2. Specific Plant route (e.g. PGTL)
-    // 3. Location-level route (e.g. Pune - maps all plants in Pune)
+    // 3. Location-level route (e.g. Pune)
     // 4. Global default
     let toEmails = options.testEmail ||
       (plantRoutes[plant] && plantRoutes[plant].to) ||
@@ -1702,30 +2212,62 @@ function sendMonthlyPlantLeakageReports(options) {
       return;
     }
 
+    const batchKey = toList.slice().sort().join(',') + '___' + ccList.slice().sort().join(',');
+    if (!recipientBatches[batchKey]) {
+      recipientBatches[batchKey] = {
+        toList: toList,
+        ccList: ccList,
+        groups: []
+      };
+    }
+    recipientBatches[batchKey].groups.push(grp);
+  });
+
+  // Dispatch emails for each recipient batch
+  Object.keys(recipientBatches).forEach(function(batchKey) {
+    const batch = recipientBatches[batchKey];
+    const toList = batch.toList;
+    const ccList = batch.ccList;
+    const grps = batch.groups;
+
+    if (!grps.length) return;
+
     let totalLeaks = 0;
-    recs.forEach(function(r) {
-      const q = Number(r.quantity) > 0 ? Number(r.quantity) : 1;
-      totalLeaks += q;
+    grps.forEach(function(g) {
+      (g.records || []).forEach(function(r) {
+        totalLeaks += Number(r.quantity) > 0 ? Number(r.quantity) : 1;
+      });
     });
 
-    const htmlBody = buildMonthlyReportHtml_(plant, location, monthLabel, recs, totalLeaks);
-    const subject = 'PG Group AC Leakage Performance Report — ' + plant + ' (' + location + ') [' + monthLabel + ']';
+    const isMulti = grps.length > 1;
+    let subject = '';
+    let plantAuditLabel = '';
 
-    // Generate Excel attachment for this plant report
+    if (isMulti) {
+      const plantNames = grps.map(function(g) { return g.plant; });
+      subject = 'PG Group AC Leakage Performance Report — Consolidated (' + plantNames.join(' & ') + ') [' + monthLabel + ']';
+      plantAuditLabel = 'Consolidated: ' + plantNames.join(', ');
+    } else {
+      subject = 'PG Group AC Leakage Performance Report — ' + grps[0].plant + ' (' + grps[0].location + ') [' + monthLabel + ']';
+      plantAuditLabel = grps[0].plant + ' (' + grps[0].location + ')';
+    }
+
+    const htmlBody = buildMonthlyReportHtml_(grps, '', monthLabel);
+
+    // Generate Excel attachment (.xls / .csv)
     let excelAttachment = null;
     try {
-      excelAttachment = createMonthlyReportExcelAttachment_(plant, location, monthLabel, recs);
+      excelAttachment = createMonthlyReportExcelAttachment_(grps, '', monthLabel);
     } catch (attErr) {
       Logger.log('Excel generation fallback: ' + attErr);
-      excelAttachment = createMonthlyReportCsvBlob_(plant, location, monthLabel, recs);
+      excelAttachment = createMonthlyReportCsvBlob_(grps, '', monthLabel);
     }
     const attachments = excelAttachment ? [excelAttachment] : [];
 
     try {
       sendSystemEmail_(toList, ccList, subject, htmlBody, '', attachments);
       emailResults.push({
-        plant: plant,
-        location: location,
+        plants: grps.map(function(g) { return g.plant + ' (' + g.location + ')'; }).join(', '),
         to: toList.join(', '),
         cc: ccList.join(', '),
         totalLeaks: totalLeaks,
@@ -1734,7 +2276,7 @@ function sendMonthlyPlantLeakageReports(options) {
       });
       logEmailActivity_({
         type: options.testEmail ? 'test_report' : 'monthly_report',
-        plant: plant + ' (' + location + ')',
+        plant: plantAuditLabel,
         month: monthLabel,
         to: toList.join(', '),
         cc: ccList.join(', '),
@@ -1747,8 +2289,7 @@ function sendMonthlyPlantLeakageReports(options) {
     } catch (sendErr) {
       const errMsg = sendErr.message || String(sendErr);
       emailResults.push({
-        plant: plant,
-        location: location,
+        plants: grps.map(function(g) { return g.plant + ' (' + g.location + ')'; }).join(', '),
         to: toList.join(', '),
         cc: ccList.join(', '),
         status: 'error',
@@ -1756,7 +2297,7 @@ function sendMonthlyPlantLeakageReports(options) {
       });
       logEmailActivity_({
         type: options.testEmail ? 'test_report' : 'monthly_report',
-        plant: plant + ' (' + location + ')',
+        plant: plantAuditLabel,
         month: monthLabel,
         to: toList.join(', '),
         cc: ccList.join(', '),
@@ -1791,47 +2332,95 @@ function previewMonthlyReport_(payload) {
     targetYear = targetYear || now.getFullYear();
   }
 
-  const startDate = new Date(targetYear, targetMonth - 1, 1, 0, 0, 0);
+  const startDate = new Date(targetYear, targetMonth - 1, 1, 0, 0, 0, 0);
   const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const monthLabel = monthNames[targetMonth - 1] + ' ' + targetYear;
 
-  const rawReports = getDefectReports_({ limit: 5000 }).reports || [];
+  const rawReports = getDefectReports_({ limit: 10000 }).reports || [];
   const locationName = String(payload.location || '').trim();
-  const plantName = String(payload.plant || 'PGTL').trim() || 'PGTL';
+  const plantName = String(payload.plant || '*').trim();
 
-  const plantRecords = rawReports.filter(function(r) {
-    if (!r.timestamp) return false;
-    const dt = new Date(r.timestamp);
-    const inDate = dt >= startDate && dt <= endDate;
-    if (!inDate) return false;
-    if (locationName && locationName !== '*' && String(r.location || '').toLowerCase() !== locationName.toLowerCase()) return false;
-    if (plantName !== '*' && plantName && String(r.plant || '').toLowerCase() !== plantName.toLowerCase()) return false;
-    return true;
+  // Filter STRICTLY for target month & year
+  const monthRecords = rawReports.filter(function(r) {
+    const dt = parseRecordDate_(r.timestamp);
+    if (!dt) return false;
+    return dt >= startDate && dt <= endDate;
   });
 
-  let totalLeaks = 0;
-  plantRecords.forEach(function(r) {
-    const q = Number(r.quantity) > 0 ? Number(r.quantity) : 1;
-    totalLeaks += q;
+  const config = getConfig_().config || {};
+  const knownLocations = config.locations || {};
+  const knownPlants = config.plants || {};
+  const groupsMap = {};
+
+  // Seed known plants and locations
+  Object.keys(knownLocations).forEach(function(loc) {
+    const plantsInLoc = (knownLocations[loc] && knownLocations[loc].plants) || {};
+    Object.keys(plantsInLoc).forEach(function(p) {
+      const gKey = p.toLowerCase() + '___' + loc.toLowerCase();
+      groupsMap[gKey] = { plant: p, location: loc, records: [] };
+    });
   });
 
-  const html = buildMonthlyReportHtml_(
-    plantName === '*' ? 'All Plants' : plantName,
-    locationName === '*' ? 'All Locations' : (locationName || 'Pune'),
-    monthLabel,
-    plantRecords,
-    totalLeaks
-  );
+  Object.keys(knownPlants).forEach(function(p) {
+    const locs = (knownPlants[p] && knownPlants[p].locations) || ['Pune'];
+    locs.forEach(function(loc) {
+      const gKey = p.toLowerCase() + '___' + loc.toLowerCase();
+      if (!groupsMap[gKey]) {
+        groupsMap[gKey] = { plant: p, location: loc, records: [] };
+      }
+    });
+  });
+
+  if (Object.keys(groupsMap).length === 0) {
+    groupsMap['pgtl___pune'] = { plant: 'PGTL', location: 'Pune', records: [] };
+  }
+
+  // Populate month records
+  monthRecords.forEach(function(r) {
+    const p = String(r.plant || 'PGTL').trim();
+    const loc = String(r.location || 'Pune').trim();
+    const gKey = p.toLowerCase() + '___' + loc.toLowerCase();
+    if (!groupsMap[gKey]) {
+      groupsMap[gKey] = { plant: p, location: loc, records: [] };
+    }
+    groupsMap[gKey].records.push(r);
+  });
+
+  // Filter groups according to payload
+  const matchingGroups = [];
+  Object.keys(groupsMap).forEach(function(gKey) {
+    const grp = groupsMap[gKey];
+    if (locationName && locationName !== '*' && grp.location.toLowerCase() !== locationName.toLowerCase()) return;
+    if (plantName && plantName !== '*' && grp.plant.toLowerCase() !== plantName.toLowerCase()) return;
+    matchingGroups.push(grp);
+  });
+
+  if (matchingGroups.length === 0) {
+    matchingGroups.push({
+      plant: plantName && plantName !== '*' ? plantName : 'PGTL',
+      location: locationName && locationName !== '*' ? locationName : 'Pune',
+      records: []
+    });
+  }
+
+  let grandTotalLeaks = 0;
+  matchingGroups.forEach(function(g) {
+    (g.records || []).forEach(function(r) {
+      grandTotalLeaks += Number(r.quantity) > 0 ? Number(r.quantity) : 1;
+    });
+  });
+
+  const html = buildMonthlyReportHtml_(matchingGroups, '', monthLabel);
 
   return {
     ok: true,
     html: html,
-    plant: plantName,
-    location: locationName || 'Pune',
+    plant: plantName === '*' ? 'All Plants' : plantName,
+    location: locationName === '*' ? 'All Locations' : (locationName || 'Pune'),
     month: monthLabel,
-    totalLeaks: totalLeaks,
-    recordsCount: plantRecords.length
+    totalLeaks: grandTotalLeaks,
+    recordsCount: matchingGroups.reduce(function(acc, g) { return acc + (g.records || []).length; }, 0)
   };
 }
 

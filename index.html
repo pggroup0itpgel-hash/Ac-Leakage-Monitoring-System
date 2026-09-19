@@ -2585,7 +2585,19 @@ async function protectedExportToExcel(type) {
       }
     }
 
-    function buildLocalMonthlyReportHtml(plantName, locationName, monthLabel, records, totalLeaks) {
+    function escapeHtmlLocal(str) {
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function computePlantMetricsLocal(records) {
+      records = records || [];
+      let totalLeaks = 0;
       let criticalCount = 0;
       let majorCount = 0;
       let minorCount = 0;
@@ -2601,6 +2613,7 @@ async function protectedExportToExcel(type) {
 
       records.forEach(r => {
         const qty = Number(r.quantity) > 0 ? Number(r.quantity) : 1;
+        totalLeaks += qty;
         const sev = String(r.severity || '').toLowerCase();
         if (sev === 'critical') criticalCount += qty;
         else if (sev === 'major') majorCount += qty;
@@ -2656,88 +2669,392 @@ async function protectedExportToExcel(type) {
         count: jointCounts[k]
       })).sort((a, b) => b.count - a.count).slice(0, 5);
 
-      let defectRowsHtml = '';
-      if (sortedDefects.length === 0) {
-        defectRowsHtml = '<tr><td colspan="3" style="padding:12px;text-align:center;color:#64748b;">No defect data recorded.</td></tr>';
-      } else {
-        sortedDefects.forEach((d, idx) => {
-          const barColor = idx === 0 ? '#4f46e5' : idx === 1 ? '#06b6d4' : '#64748b';
-          defectRowsHtml += `
-            <tr style="border-bottom:1px solid #f1f5f9;">
-              <td style="padding:10px 12px;color:#1e293b;font-weight:600;font-size:13px;">${d.name}</td>
-              <td style="padding:10px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">${d.count}</td>
-              <td style="padding:10px 12px;width:140px;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <div style="flex:1;background:#e2e8f0;border-radius:999px;height:8px;overflow:hidden;">
-                    <div style="background:${barColor};width:${Math.min(100, d.pct)}%;height:8px;border-radius:999px;"></div>
-                  </div>
-                  <span style="font-size:11px;font-weight:700;color:#475569;width:32px;text-align:right;">${d.pct}%</span>
-                </div>
-              </td>
-            </tr>`;
-        });
+      return {
+        totalLeaks,
+        criticalCount,
+        majorCount,
+        minorCount,
+        reworkCount,
+        scrapCount,
+        acceptedCount,
+        sortedDefects,
+        sortedUnits,
+        sortedLines,
+        sortedShifts,
+        sortedJoints
+      };
+    }
+
+    function buildSinglePlantSectionLocalHtml(pName, lName, records, monthLabel) {
+      pName = escapeHtmlLocal(pName || 'PGTL');
+      lName = escapeHtmlLocal(lName || 'Pune');
+      const metrics = computePlantMetricsLocal(records || []);
+      const totalLeaks = metrics.totalLeaks;
+
+      if (totalLeaks === 0) {
+        return `
+          <div style="background:#f0fdf4;border:1px solid #86efac;border-left:5px solid #22c55e;border-radius:10px;padding:22px 24px;margin-bottom:18px;">
+            <div style="display:inline-block;background:#22c55e;color:#ffffff;font-size:11px;font-weight:900;padding:3px 10px;border-radius:999px;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:10px;">
+              ZERO DEFECT STATUS
+            </div>
+            <div style="font-size:16px;font-weight:800;color:#15803d;line-height:1.4;margin-bottom:8px;">
+              &#9989; No leakage entries have been recorded in the AC Leakage Monitoring System for this month.
+            </div>
+            <div style="font-size:13px;color:#166534;line-height:1.6;">
+              During the reporting month of <b>${escapeHtmlLocal(monthLabel)}</b>, all production lines and shifts operated completely leak-free with <b>0 defect entries logged</b> for <b>${pName} (${lName})</b>.
+            </div>
+            <div style="margin-top:14px;padding-top:12px;border-top:1px solid #bbf7d0;display:flex;gap:18px;font-size:12px;color:#15803d;">
+              <span><b>Plant:</b> ${pName}</span>
+              <span><b>Location:</b> ${lName}</span>
+              <span><b>Monthly Incidents:</b> 0 (Clean Operation)</span>
+            </div>
+          </div>
+        `;
       }
+
+      let defectRowsHtml = '';
+      metrics.sortedDefects.forEach((d, idx) => {
+        const barColor = idx === 0 ? '#4f46e5' : idx === 1 ? '#06b6d4' : '#64748b';
+        defectRowsHtml += `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:10px 12px;color:#1e293b;font-weight:600;font-size:13px;">${escapeHtmlLocal(d.name)}</td>
+            <td style="padding:10px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">${d.count}</td>
+            <td style="padding:10px 12px;width:140px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;background:#e2e8f0;border-radius:999px;height:8px;overflow:hidden;">
+                  <div style="background:${barColor};width:${Math.min(100, d.pct)}%;height:8px;border-radius:999px;"></div>
+                </div>
+                <span style="font-size:11px;font-weight:700;color:#475569;width:32px;text-align:right;">${d.pct}%</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
 
       let unitRowsHtml = '';
-      if (sortedUnits.length === 0) {
-        unitRowsHtml = '<tr><td colspan="3" style="padding:12px;text-align:center;color:#64748b;">No unit data recorded.</td></tr>';
-      } else {
-        sortedUnits.forEach((u, idx) => {
-          const barColor = idx === 0 ? '#10b981' : idx === 1 ? '#3b82f6' : '#8b5cf6';
-          unitRowsHtml += `
-            <tr style="border-bottom:1px solid #f1f5f9;">
-              <td style="padding:9px 12px;color:#1e293b;font-weight:600;font-size:13px;">${u.name}</td>
-              <td style="padding:9px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">${u.count}</td>
-              <td style="padding:9px 12px;width:120px;">
-                <div style="display:flex;align-items:center;gap:6px;">
-                  <div style="flex:1;background:#e2e8f0;border-radius:999px;height:7px;overflow:hidden;">
-                    <div style="background:${barColor};width:${Math.min(100, u.pct)}%;height:7px;border-radius:999px;"></div>
-                  </div>
-                  <span style="font-size:11px;font-weight:700;color:#475569;width:30px;text-align:right;">${u.pct}%</span>
+      metrics.sortedUnits.forEach((u, idx) => {
+        const barColor = idx === 0 ? '#10b981' : idx === 1 ? '#3b82f6' : '#8b5cf6';
+        unitRowsHtml += `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:9px 12px;color:#1e293b;font-weight:600;font-size:13px;">${escapeHtmlLocal(u.name)}</td>
+            <td style="padding:9px 12px;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">${u.count}</td>
+            <td style="padding:9px 12px;width:120px;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <div style="flex:1;background:#e2e8f0;border-radius:999px;height:7px;overflow:hidden;">
+                  <div style="background:${barColor};width:${Math.min(100, u.pct)}%;height:7px;border-radius:999px;"></div>
                 </div>
-              </td>
-            </tr>`;
-        });
-      }
+                <span style="font-size:11px;font-weight:700;color:#475569;width:30px;text-align:right;">${u.pct}%</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
 
       let lineRowsHtml = '';
-      if (sortedLines.length === 0) {
-        lineRowsHtml = '<tr><td colspan="2" style="padding:12px;text-align:center;color:#64748b;">No line records.</td></tr>';
-      } else {
-        sortedLines.forEach(l => {
-          lineRowsHtml += `
-            <tr style="border-bottom:1px solid #f1f5f9;">
-              <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">${l.name}</td>
-              <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">${l.count}</td>
-            </tr>`;
-        });
-      }
+      metrics.sortedLines.forEach(l => {
+        lineRowsHtml += `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">${escapeHtmlLocal(l.name)}</td>
+            <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">${l.count}</td>
+          </tr>
+        `;
+      });
 
       let shiftRowsHtml = '';
-      if (sortedShifts.length === 0) {
-        shiftRowsHtml = '<tr><td colspan="2" style="padding:12px;text-align:center;color:#64748b;">No shift records.</td></tr>';
-      } else {
-        sortedShifts.forEach(s => {
-          shiftRowsHtml += `
-            <tr style="border-bottom:1px solid #f1f5f9;">
-              <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">${s.name}</td>
-              <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">${s.count}</td>
-            </tr>`;
-        });
-      }
+      metrics.sortedShifts.forEach(s => {
+        shiftRowsHtml += `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:9px 12px;color:#334155;font-weight:500;font-size:13px;">${escapeHtmlLocal(s.name)}</td>
+            <td style="padding:9px 12px;text-align:right;font-weight:700;color:#0f172a;font-size:13px;">${s.count}</td>
+          </tr>
+        `;
+      });
 
       let jointRowsHtml = '';
-      if (sortedJoints.length > 0) {
-        sortedJoints.forEach(j => {
+      if (metrics.sortedJoints.length > 0) {
+        metrics.sortedJoints.forEach(j => {
           jointRowsHtml += `
             <tr style="border-bottom:1px solid #f1f5f9;">
-              <td style="padding:8px 12px;color:#334155;font-weight:600;font-size:12px;">${j.name}</td>
+              <td style="padding:8px 12px;color:#334155;font-weight:600;font-size:12px;">${escapeHtmlLocal(j.name)}</td>
               <td style="padding:8px 12px;text-align:right;font-weight:700;color:#dc2626;font-size:12px;">${j.count}</td>
-            </tr>`;
+            </tr>
+          `;
         });
       }
 
-      const generatedDate = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+      return `
+        <!-- KPI Metric Cards Grid (6 cards) -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:20px;">
+          <tr>
+            <td width="33.33%" style="padding:4px;">
+              <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 8px;text-align:center;">
+                <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;">TOTAL LEAKS</div>
+                <div style="font-size:24px;font-weight:900;color:#1e3a8a;margin-top:2px;">${totalLeaks}</div>
+              </div>
+            </td>
+            <td width="33.33%" style="padding:4px;">
+              <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 8px;text-align:center;">
+                <div style="font-size:11px;font-weight:700;color:#b91c1c;text-transform:uppercase;">CRITICAL</div>
+                <div style="font-size:24px;font-weight:900;color:#991b1b;margin-top:2px;">${metrics.criticalCount}</div>
+              </div>
+            </td>
+            <td width="33.33%" style="padding:4px;">
+              <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 8px;text-align:center;">
+                <div style="font-size:11px;font-weight:700;color:#c2410c;text-transform:uppercase;">MAJOR</div>
+                <div style="font-size:24px;font-weight:900;color:#9a3412;margin-top:2px;">${metrics.majorCount}</div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td width="33.33%" style="padding:4px;">
+              <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 8px;text-align:center;">
+                <div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;">MINOR</div>
+                <div style="font-size:24px;font-weight:900;color:#166534;margin-top:2px;">${metrics.minorCount}</div>
+              </div>
+            </td>
+            <td width="33.33%" style="padding:4px;">
+              <div style="background:#fefce8;border:1px solid #fef08a;border-radius:10px;padding:12px 8px;text-align:center;">
+                <div style="font-size:11px;font-weight:700;color:#a16207;text-transform:uppercase;">REWORK</div>
+                <div style="font-size:24px;font-weight:900;color:#854d0e;margin-top:2px;">${metrics.reworkCount}</div>
+              </div>
+            </td>
+            <td width="33.33%" style="padding:4px;">
+              <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:12px 8px;text-align:center;">
+                <div style="font-size:11px;font-weight:700;color:#be185d;text-transform:uppercase;">SCRAP</div>
+                <div style="font-size:24px;font-weight:900;color:#9d174d;margin-top:2px;">${metrics.scrapCount}</div>
+              </div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Unit Type & Defect Breakdown -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:20px;">
+          <tr>
+            <td width="50%" valign="top" style="padding-right:8px;">
+              <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Unit Type Breakdown</div>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+                  <tr>
+                    <th style="padding:8px 10px;text-align:left;">Unit Type</th>
+                    <th style="padding:8px 6px;text-align:center;">Count</th>
+                    <th style="padding:8px 10px;text-align:left;">Share</th>
+                  </tr>
+                </thead>
+                <tbody>${unitRowsHtml || '<tr><td colspan="3" style="padding:10px;text-align:center;color:#64748b;">No unit data.</td></tr>'}</tbody>
+              </table>
+            </td>
+            <td width="50%" valign="top" style="padding-left:8px;">
+              <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Defect Categories</div>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+                  <tr>
+                    <th style="padding:8px 10px;text-align:left;">Category</th>
+                    <th style="padding:8px 6px;text-align:center;">Count</th>
+                    <th style="padding:8px 10px;text-align:left;">Share</th>
+                  </tr>
+                </thead>
+                <tbody>${defectRowsHtml || '<tr><td colspan="3" style="padding:10px;text-align:center;color:#64748b;">No defect data.</td></tr>'}</tbody>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Line Breakdown & Shift Tables -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:18px;">
+          <tr>
+            <td width="50%" valign="top" style="padding-right:8px;">
+              <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Line Breakdown</div>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+                  <tr>
+                    <th style="padding:8px 12px;text-align:left;">Line</th>
+                    <th style="padding:8px 12px;text-align:right;">Leaks</th>
+                  </tr>
+                </thead>
+                <tbody>${lineRowsHtml || '<tr><td colspan="2" style="padding:10px;text-align:center;color:#64748b;">No line records.</td></tr>'}</tbody>
+              </table>
+            </td>
+            <td width="50%" valign="top" style="padding-left:8px;">
+              <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Shift Distribution</div>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+                <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+                  <tr>
+                    <th style="padding:8px 12px;text-align:left;">Shift</th>
+                    <th style="padding:8px 12px;text-align:right;">Leaks</th>
+                  </tr>
+                </thead>
+                <tbody>${shiftRowsHtml || '<tr><td colspan="2" style="padding:10px;text-align:center;color:#64748b;">No shift records.</td></tr>'}</tbody>
+              </table>
+            </td>
+          </tr>
+        </table>
+        ${jointRowsHtml ? `
+        <div style="margin-bottom:18px;">
+          <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Top Leakage Joints</div>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+            <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
+              <tr>
+                <th style="padding:8px 12px;text-align:left;">Joint / Location</th>
+                <th style="padding:8px 12px;text-align:right;">Leak Frequency</th>
+              </tr>
+            </thead>
+            <tbody>${jointRowsHtml}</tbody>
+          </table>
+        </div>` : ''}
+      `;
+    }
+
+    function buildLocalMonthlyReportHtml(plantName, locationName, monthLabel, records, totalLeaks) {
+      const cfg = APP_STATE.config || {};
+      const knownLocations = cfg.locations || {};
+      const knownPlants = cfg.plants || {};
+
+      let groups = [];
+      const isAllPlants = plantName === 'All Plants' || plantName === '*';
+
+      if (isAllPlants) {
+        // Collect all plants in the selected location or globally
+        const targetLoc = locationName === 'All Locations' || locationName === '*' ? '' : locationName;
+        const plantSet = {};
+
+        if (targetLoc && knownLocations[targetLoc] && knownLocations[targetLoc].plants) {
+          Object.keys(knownLocations[targetLoc].plants).forEach(p => { plantSet[p] = targetLoc; });
+        } else {
+          Object.keys(knownPlants).forEach(p => {
+            const locs = (knownPlants[p] && knownPlants[p].locations) || ['Pune'];
+            locs.forEach(l => { if (!targetLoc || l === targetLoc) plantSet[p] = l; });
+          });
+        }
+
+        // Also add any plants from the records
+        (records || []).forEach(r => {
+          const p = r.plant || 'PGTL';
+          const l = r.location || 'Pune';
+          if (!targetLoc || l.toLowerCase() === targetLoc.toLowerCase()) {
+            plantSet[p] = l;
+          }
+        });
+
+        if (Object.keys(plantSet).length === 0) {
+          plantSet['PGTL'] = targetLoc || 'Pune';
+        }
+
+        groups = Object.keys(plantSet).sort().map(p => {
+          const loc = plantSet[p] || 'Pune';
+          const plantRecs = (records || []).filter(r => canonicalPlantName(r.plant) === canonicalPlantName(p));
+          return { plant: p, location: loc, records: plantRecs };
+        });
+      } else {
+        groups = [{
+          plant: plantName || 'PGTL',
+          location: locationName && locationName !== 'All Locations' ? locationName : 'Pune',
+          records: records || []
+        }];
+      }
+
+      let grandTotalLeaks = 0;
+      let grandCritical = 0;
+      let grandMajor = 0;
+      let grandMinor = 0;
+
+      const groupMetricsList = groups.map(grp => {
+        const met = computePlantMetricsLocal(grp.records || []);
+        grandTotalLeaks += met.totalLeaks;
+        grandCritical += met.criticalCount;
+        grandMajor += met.majorCount;
+        grandMinor += met.minorCount;
+        return { grp, metrics: met };
+      });
+
+      const isMulti = groups.length > 1;
+      const now = new Date();
+      const generatedDate = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' +
+        now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+      const locDisplay = escapeHtmlLocal(locationName || 'Corporate');
+      const plantDisplay = escapeHtmlLocal(isMulti ? groups.map(g => g.plant).join(', ') : (groups[0]?.plant || 'PGTL'));
+
+      const locBadge = `<span style="display:inline-block;background-color:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">LOCATION:</b> ${locDisplay}</span>`;
+      const plantBadge = `<span style="display:inline-block;background-color:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">${isMulti ? 'PLANTS (' + groups.length + '):' : 'PLANT:'}</b> ${plantDisplay}</span>`;
+      const periodBadge = `<span style="display:inline-block;background-color:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ${escapeHtmlLocal(monthLabel)}</span>`;
+
+      let multiPlantSummaryTable = '';
+      if (isMulti) {
+        const summaryRows = groupMetricsList.map(item => {
+          const pName = escapeHtmlLocal(item.grp.plant);
+          const lName = escapeHtmlLocal(item.grp.location);
+          const m = item.metrics;
+          const isClean = m.totalLeaks === 0;
+          const statusBadge = isClean
+            ? '<span style="display:inline-block;background:#dcfce7;color:#166534;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">&#9989; Zero Leakage</span>'
+            : `<span style="display:inline-block;background:#fee2e2;color:#991b1b;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">&#9888;&#65039; ${m.totalLeaks} Leaks Logged</span>`;
+
+          return `
+            <tr style="border-bottom:1px solid #e2e8f0;">
+              <td style="padding:10px 12px;font-weight:700;color:#0f172a;">🏢 ${pName}</td>
+              <td style="padding:10px 8px;color:#475569;">${lName}</td>
+              <td style="padding:10px 8px;text-align:center;font-weight:800;font-size:13px;color:${isClean ? '#166534' : '#1e3a8a'};">${m.totalLeaks}</td>
+              <td style="padding:10px 8px;text-align:center;font-weight:700;color:#991b1b;">${m.criticalCount}</td>
+              <td style="padding:10px 8px;text-align:center;font-weight:700;color:#9a3412;">${m.majorCount}</td>
+              <td style="padding:10px 8px;text-align:center;font-weight:700;color:#166534;">${m.minorCount}</td>
+              <td style="padding:10px 12px;">${statusBadge}</td>
+            </tr>
+          `;
+        }).join('');
+
+        multiPlantSummaryTable = `
+          <!-- Multi-Plant Executive Overview Table -->
+          <div style="margin-bottom:26px;">
+            <div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:10px;border-bottom:2px solid #3b82f6;padding-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+              <span>Executive Multi-Plant Performance Comparison</span>
+              <span style="font-size:12px;font-weight:700;color:#3b82f6;">${groups.length} Plants Monitored</span>
+            </div>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;font-size:12px;width:100%;">
+              <thead style="background:#1e293b;color:#ffffff;text-transform:uppercase;font-size:11px;">
+                <tr>
+                  <th style="padding:10px 12px;text-align:left;">Plant Name</th>
+                  <th style="padding:10px 8px;text-align:left;">Location</th>
+                  <th style="padding:10px 8px;text-align:center;">Total Leaks</th>
+                  <th style="padding:10px 8px;text-align:center;">Critical</th>
+                  <th style="padding:10px 8px;text-align:center;">Major</th>
+                  <th style="padding:10px 8px;text-align:center;">Minor</th>
+                  <th style="padding:10px 12px;text-align:left;">Monthly Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${summaryRows}
+                <tr style="background:#f1f5f9;font-weight:800;border-top:2px solid #94a3b8;">
+                  <td style="padding:10px 12px;color:#0f172a;" colspan="2">TOTAL (ALL PLANTS CONSOLIDATED)</td>
+                  <td style="padding:10px 8px;text-align:center;font-size:13px;color:#1e3a8a;">${grandTotalLeaks}</td>
+                  <td style="padding:10px 8px;text-align:center;color:#991b1b;">${grandCritical}</td>
+                  <td style="padding:10px 8px;text-align:center;color:#9a3412;">${grandMajor}</td>
+                  <td style="padding:10px 8px;text-align:center;color:#166534;">${grandMinor}</td>
+                  <td style="padding:10px 12px;color:#334155;font-size:11px;">${grandTotalLeaks === 0 ? 'All Plants 100% Leak-Free' : grandTotalLeaks + ' Total Leaks'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      const plantSectionsHtml = groups.map(grp => {
+        const pName = escapeHtmlLocal(grp.plant);
+        const lName = escapeHtmlLocal(grp.location);
+        const inner = buildSinglePlantSectionLocalHtml(grp.plant, grp.location, grp.records, monthLabel);
+
+        if (isMulti) {
+          return `
+            <div style="margin-bottom:28px;border:1px solid #e2e8f0;border-radius:12px;padding:20px;background:#ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.03);">
+              <div style="border-bottom:2px solid #3b82f6;padding-bottom:10px;margin-bottom:16px;">
+                <div style="font-size:11px;font-weight:900;color:#2563eb;text-transform:uppercase;letter-spacing:1px;">PLANT QUALITY PROFILE</div>
+                <h2 style="margin:2px 0 0 0;font-size:18px;font-weight:800;color:#0f172a;">🏢 ${pName} <span style="font-size:13px;font-weight:600;color:#64748b;">(${lName})</span></h2>
+              </div>
+              ${inner}
+            </div>
+          `;
+        }
+        return inner;
+      }).join('');
 
       return `<!DOCTYPE html>
 <html>
@@ -2746,17 +3063,17 @@ async function protectedExportToExcel(type) {
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;padding:24px 0;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" style="max-width:680px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);border:1px solid #e2e8f0;" cellspacing="0" cellpadding="0">
+        <table role="presentation" width="100%" style="max-width:720px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);border:1px solid #e2e8f0;" cellspacing="0" cellpadding="0">
           
-          <!-- Header Banner (Solid background for full Gmail & Outlook compatibility) -->
+          <!-- Header Banner -->
           <tr>
             <td bgcolor="#1e293b" style="background-color:#1e293b !important;background:#1e293b;padding:28px 24px;text-align:left;color:#ffffff;border-bottom:3px solid #3b82f6;">
               <div style="font-size:12px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">PG GROUP</div>
-              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">Monthly AC Leakage Quality Report</h1>
+              <h1 style="margin:0 0 14px 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">${isMulti ? 'Monthly AC Leakage Quality Report — Consolidated' : 'Monthly AC Leakage Quality Report'}</h1>
               <div style="display:block;margin-top:10px;">
-                <span style="display:inline-block;background-color:#334155;background:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">LOCATION:</b> ${locationName || 'Corporate'}</span>
-                <span style="display:inline-block;background-color:#334155;background:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-right:8px;margin-bottom:6px;"><b style="color:#93c5fd;">PLANT:</b> ${plantName}</span>
-                <span style="display:inline-block;background-color:#334155;background:#334155;border:1px solid #475569;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;color:#ffffff;margin-bottom:6px;"><b style="color:#93c5fd;">PERIOD:</b> ${monthLabel}</span>
+                ${locBadge}
+                ${plantBadge}
+                ${periodBadge}
               </div>
             </td>
           </tr>
@@ -2768,134 +3085,19 @@ async function protectedExportToExcel(type) {
               <!-- Executive Summary Callout -->
               <div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:22px;">
                 <p style="margin:0;font-size:13px;color:#334155;line-height:1.6;">
-                  Performance overview for <b>${plantName}${locationName && locationName !== 'All Locations' ? ' (' + locationName + ')' : ''}</b> during <b>${monthLabel}</b>. Total of <b>${totalLeaks}</b> leakage defect(s) logged across all production lines and shifts.
+                  ${isMulti
+                    ? `Consolidated performance overview for <b>${plantDisplay}</b> (${locDisplay}) during <b>${escapeHtmlLocal(monthLabel)}</b>. Total of <b>${grandTotalLeaks}</b> leakage defect(s) logged across all ${groups.length} monitored plants.`
+                    : `Performance overview for <b>${plantDisplay} (${locDisplay})</b> during <b>${escapeHtmlLocal(monthLabel)}</b>. Total of <b>${grandTotalLeaks}</b> leakage defect(s) logged across all production lines and shifts.`
+                  }
                 </p>
               </div>
-              
-              <!-- KPI Metric Cards Grid (6 cards) -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:22px;">
-                <tr>
-                  <td width="33.33%" style="padding:4px;">
-                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 8px;text-align:center;">
-                      <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;">TOTAL LEAKS</div>
-                      <div style="font-size:24px;font-weight:900;color:#1e3a8a;margin-top:2px;">${totalLeaks}</div>
-                    </div>
-                  </td>
-                  <td width="33.33%" style="padding:4px;">
-                    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 8px;text-align:center;">
-                      <div style="font-size:11px;font-weight:700;color:#b91c1c;text-transform:uppercase;">CRITICAL</div>
-                      <div style="font-size:24px;font-weight:900;color:#991b1b;margin-top:2px;">${criticalCount}</div>
-                    </div>
-                  </td>
-                  <td width="33.33%" style="padding:4px;">
-                    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 8px;text-align:center;">
-                      <div style="font-size:11px;font-weight:700;color:#c2410c;text-transform:uppercase;">MAJOR</div>
-                      <div style="font-size:24px;font-weight:900;color:#9a3412;margin-top:2px;">${majorCount}</div>
-                    </div>
-                  </td>
-                </tr>
-                <tr>
-                  <td width="33.33%" style="padding:4px;">
-                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 8px;text-align:center;">
-                      <div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;">MINOR</div>
-                      <div style="font-size:24px;font-weight:900;color:#166534;margin-top:2px;">${minorCount}</div>
-                    </div>
-                  </td>
-                  <td width="33.33%" style="padding:4px;">
-                    <div style="background:#fefce8;border:1px solid #fef08a;border-radius:10px;padding:12px 8px;text-align:center;">
-                      <div style="font-size:11px;font-weight:700;color:#a16207;text-transform:uppercase;">REWORK</div>
-                      <div style="font-size:24px;font-weight:900;color:#854d0e;margin-top:2px;">${reworkCount}</div>
-                    </div>
-                  </td>
-                  <td width="33.33%" style="padding:4px;">
-                    <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:12px 8px;text-align:center;">
-                      <div style="font-size:11px;font-weight:700;color:#be185d;text-transform:uppercase;">SCRAP</div>
-                      <div style="font-size:24px;font-weight:900;color:#9d174d;margin-top:2px;">${scrapCount}</div>
-                    </div>
-                  </td>
-                </tr>
-              </table>
-              
-              <!-- Unit Type & Defect Breakdown (Two Columns) -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:22px;">
-                <tr>
-                  <td width="50%" valign="top" style="padding-right:8px;">
-                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Unit Type Breakdown</div>
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
-                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
-                        <tr>
-                          <th style="padding:8px 10px;text-align:left;">Unit Type</th>
-                          <th style="padding:8px 6px;text-align:center;">Count</th>
-                          <th style="padding:8px 10px;text-align:left;">Share</th>
-                        </tr>
-                      </thead>
-                      <tbody>${unitRowsHtml}</tbody>
-                    </table>
-                  </td>
-                  <td width="50%" valign="top" style="padding-left:8px;">
-                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Defect Categories</div>
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
-                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
-                        <tr>
-                          <th style="padding:8px 10px;text-align:left;">Category</th>
-                          <th style="padding:8px 6px;text-align:center;">Count</th>
-                          <th style="padding:8px 10px;text-align:left;">Share</th>
-                        </tr>
-                      </thead>
-                      <tbody>${defectRowsHtml}</tbody>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-              
-              <!-- Line Breakdown & Shift Tables (Two Columns) -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:20px;">
-                <tr>
-                  <td width="50%" valign="top" style="padding-right:8px;">
-                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Line Breakdown</div>
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
-                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
-                        <tr>
-                          <th style="padding:8px 12px;text-align:left;">Line</th>
-                          <th style="padding:8px 12px;text-align:right;">Leaks</th>
-                        </tr>
-                      </thead>
-                      <tbody>${lineRowsHtml}</tbody>
-                    </table>
-                  </td>
-                  <td width="50%" valign="top" style="padding-left:8px;">
-                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Shift Distribution</div>
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
-                      <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
-                        <tr>
-                          <th style="padding:8px 12px;text-align:left;">Shift</th>
-                          <th style="padding:8px 12px;text-align:right;">Leaks</th>
-                        </tr>
-                      </thead>
-                      <tbody>${shiftRowsHtml}</tbody>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-              
-              ${jointRowsHtml ? `
-              <!-- Top Joint Leakage Points -->
-              <div style="margin-bottom:20px;">
-                <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:5px;">Top Leakage Joints</div>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
-                  <thead style="background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;font-weight:700;">
-                    <tr>
-                      <th style="padding:8px 12px;text-align:left;">Joint / Location</th>
-                      <th style="padding:8px 12px;text-align:right;">Leak Frequency</th>
-                    </tr>
-                  </thead>
-                  <tbody>${jointRowsHtml}</tbody>
-                </table>
-              </div>` : ''}
+
+              ${multiPlantSummaryTable}
+              ${plantSectionsHtml}
               
               <!-- PROMINENT ATTACHMENT CALLOUT BANNER -->
               <div style="margin-top:20px;padding:12px 18px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;color:#166534;font-size:12px;line-height:1.5;">
-                <div style="font-weight:800;font-size:12px;margin-bottom:3px;color:#15803d;letter-spacing:0.3px;">📊 EXCEL DETAILED REPORT ATTACHED (.xlsx)</div>
+                <div style="font-weight:800;font-size:12px;margin-bottom:3px;color:#15803d;letter-spacing:0.3px;">📊 EXCEL DETAILED REPORT ATTACHED (.xls)</div>
                 <div>The complete defect dataset and executive summary workbook has been generated and attached to this email for your offline analysis and record keeping.</div>
               </div>
               
