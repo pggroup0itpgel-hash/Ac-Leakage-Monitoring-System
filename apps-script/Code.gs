@@ -1151,7 +1151,7 @@ function buildSinglePlantSectionHtml_(grp, monthLabel, isMultiPlant) {
       '    ZERO DEFECT STATUS',
       '  </div>',
       '  <div style="font-size:16px;font-weight:800;color:#15803d;line-height:1.4;margin-bottom:8px;">',
-      '    &#9989; No leakage entries have been recorded in the AC Leakage Monitoring System for this month.',
+      '    <span style="color:#16a34a;font-weight:900;margin-right:6px;">&#10003;</span> No leakage entries have been recorded in the AC Leakage Monitoring System for this month.',
       '  </div>',
       '  <div style="font-size:13px;color:#166534;line-height:1.6;">',
       '    During the reporting month of <b>' + escapeHtml_(monthLabel) + '</b>, all production lines and shifts operated completely leak-free with <b>0 defect entries logged</b> for <b>' + plantName + ' (' + locationName + ')</b>.',
@@ -1424,12 +1424,12 @@ function buildMonthlyReportHtml_(plantOrGroups, locationName, monthLabel, record
       const m = item.metrics;
       const isClean = m.totalLeaks === 0;
       const statusBadge = isClean
-        ? '<span style="display:inline-block;background:#dcfce7;color:#166534;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">&#9989; Zero Leakage</span>'
-        : '<span style="display:inline-block;background:#fee2e2;color:#991b1b;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">&#9888;&#65039; ' + m.totalLeaks + ' Leaks Logged</span>';
+        ? '<span style="display:inline-block;background:#dcfce7;color:#166534;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;"><span style="color:#16a34a;font-weight:bold;margin-right:4px;">&#10003;</span>Zero Leakage</span>'
+        : '<span style="display:inline-block;background:#fee2e2;color:#991b1b;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">' + m.totalLeaks + ' Leaks Logged</span>';
 
       return [
         '<tr style="border-bottom:1px solid #e2e8f0;">',
-        '  <td style="padding:10px 12px;font-weight:700;color:#0f172a;">🏢 ' + pName + '</td>',
+        '  <td style="padding:10px 12px;font-weight:700;color:#0f172a;">' + pName + '</td>',
         '  <td style="padding:10px 8px;color:#475569;">' + lName + '</td>',
         '  <td style="padding:10px 8px;text-align:center;font-weight:800;font-size:13px;color:' + (isClean ? '#166534' : '#1e3a8a') + ';">' + m.totalLeaks + '</td>',
         '  <td style="padding:10px 8px;text-align:center;font-weight:700;color:#991b1b;">' + m.criticalCount + '</td>',
@@ -1486,7 +1486,7 @@ function buildMonthlyReportHtml_(plantOrGroups, locationName, monthLabel, record
         '<div style="margin-bottom:28px;border:1px solid #e2e8f0;border-radius:12px;padding:20px;background:#ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.03);">',
         '  <div style="border-bottom:2px solid #3b82f6;padding-bottom:10px;margin-bottom:16px;">',
         '    <div style="font-size:11px;font-weight:900;color:#2563eb;text-transform:uppercase;letter-spacing:1px;">PLANT QUALITY PROFILE</div>',
-        '    <h2 style="margin:2px 0 0 0;font-size:18px;font-weight:800;color:#0f172a;">🏢 ' + pName + ' <span style="font-size:13px;font-weight:600;color:#64748b;">(' + lName + ')</span></h2>',
+        '    <h2 style="margin:2px 0 0 0;font-size:18px;font-weight:800;color:#0f172a;">' + pName + ' <span style="font-size:13px;font-weight:600;color:#64748b;">(' + lName + ')</span></h2>',
         '  </div>',
         innerHtml,
         '</div>'
@@ -1548,7 +1548,7 @@ function buildMonthlyReportHtml_(plantOrGroups, locationName, monthLabel, record
     '              ',
     '              <!-- PROMINENT ATTACHMENT CALLOUT BANNER -->',
     '              <div style="margin-top:20px;padding:12px 18px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;color:#166534;font-size:12px;line-height:1.5;">',
-    '                <div style="font-weight:800;font-size:12px;margin-bottom:3px;color:#15803d;letter-spacing:0.3px;">📊 EXCEL DETAILED REPORT ATTACHED (.xls)</div>',
+    '                <div style="font-weight:800;font-size:12px;margin-bottom:3px;color:#15803d;letter-spacing:0.3px;">EXCEL DETAILED REPORT ATTACHED (.xls)</div>',
     '                <div>The complete defect dataset and executive summary workbook has been generated and attached to this email for your offline analysis and record keeping.</div>',
     '              </div>',
     '              ',
@@ -1639,7 +1639,7 @@ function createMonthlyReportExcelAttachment_(plantOrGroups, locationName, monthL
         '      <Cell ss:StyleID="DataCellCenter"><Data ss:Type="String">-</Data></Cell>',
         '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(lName) + '</Data></Cell>',
         '      <Cell ss:StyleID="DataCell"><Data ss:Type="String">' + escapeXml(pName) + '</Data></Cell>',
-        '      <Cell ss:StyleID="DataCell" ss:MergeAcross="9"><Data ss:Type="String">&#9989; No leakage entries have been recorded in the AC Leakage Monitoring System for this month (Zero Defects Logged).</Data></Cell>',
+        '      <Cell ss:StyleID="DataCell" ss:MergeAcross="9"><Data ss:Type="String">No leakage entries have been recorded in the AC Leakage Monitoring System for this month (Zero Defects Logged).</Data></Cell>',
         '    </Row>'
       ].join(''));
       return;
