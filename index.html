@@ -28,7 +28,7 @@
     .brand-left{display:flex;align-items:center;gap:10px}
     .brand-left img{height:38px;border-radius:6px;object-fit:cover}
     .brand-left h1{font-size:19px;line-height:1;color:#fff}
-    .nav-buttons{display:flex;gap:8px;align-items:center}
+    .nav-buttons{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
     .btn{background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.25);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:6px;}
     .btn-excel{background:#217346;border:none;cursor:pointer}
 .btn-excel:hover{opacity:0.95}
@@ -51,6 +51,67 @@
       white-space:nowrap;
       overflow:hidden;
       text-overflow:ellipsis;
+    }
+    #navLocationSelect option{
+      background:#fff;
+      color:#1e293b;
+    }
+    .nav-period-filter{
+      display:inline-flex;
+      align-items:center;
+      gap:5px;
+      background:rgba(255,255,255,0.18);
+      border:1px solid rgba(255,255,255,0.32);
+      padding:3px 7px;
+      border-radius:6px;
+      color:#fff;
+      font-size:11px;
+      font-weight:700;
+      height:28px;
+      box-sizing:border-box;
+      transition:all 0.2s ease;
+    }
+    .nav-period-filter:hover{
+      background:rgba(255,255,255,0.26);
+      border-color:rgba(255,255,255,0.45);
+    }
+    .nav-period-icon{
+      font-size:12px;
+      line-height:1;
+    }
+    .nav-period-title{
+      color:#f1f5f9;
+      font-size:11px;
+      font-weight:700;
+      white-space:nowrap;
+    }
+    .nav-period-select{
+      background:#ffffff;
+      color:#1e293b;
+      border:1px solid rgba(255,255,255,0.5);
+      border-radius:4px;
+      padding:2px 6px;
+      font-size:11px;
+      font-weight:700;
+      cursor:pointer;
+      outline:none;
+      height:22px;
+      line-height:1.2;
+      box-sizing:border-box;
+      transition:all 0.2s ease;
+      max-width:140px;
+    }
+    .nav-period-select:hover{
+      border-color:#6366f1;
+    }
+    .nav-period-select:focus{
+      border-color:#4f46e5;
+      box-shadow:0 0 0 2px rgba(79,70,229,0.3);
+    }
+    .nav-period-select option{
+      background:#ffffff;
+      color:#1e293b;
+      font-weight:600;
     }
 
     .live-indicator{display:flex;align-items:center;gap:5px;margin-right:10px}
@@ -329,8 +390,15 @@
             <span class="live-text">LIVE</span>
           </div>
           <button class="access-indicator" id="accessIndicatorBtn" title="Current location scope">Location: -</button>
-          <select id="navLocationSelect" class="access-indicator" style="display:none;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.15);color:#fff;font-weight:700;font-size:12px"></select>
-<div class="dropdown">
+          <select id="navLocationSelect" class="access-indicator" style="display:none;padding:5px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.18);color:#fff;font-weight:700;font-size:11px;height:28px"></select>
+          <div class="nav-period-filter" title="Charts Time Period Filter (Controls top 6 distribution/pareto charts &amp; Production Line comparison)">
+            <span class="nav-period-icon">📅</span>
+            <span class="nav-period-title">Period:</span>
+            <select id="chartsPeriodSelect" onchange="onChartsPeriodChange()" class="nav-period-select" title="Select time period for charts">
+              <option value="all">All Time</option>
+            </select>
+          </div>
+          <div class="dropdown">
             <button class="btn btn-excel">📊 Excel ▼</button>
             <div class="dropdown-content">
               <a href="javascript:void(0)" onclick="protectedExportToExcel('overall')">Overall Leakages</a>
@@ -439,21 +507,6 @@
 
         <div class="stat-card">
           <img src="QR_CODE.png" alt="QR Code" class="qr-image" onerror="this.parentElement.innerHTML='<div style=\'color:#999;font-size:9px\'>QR Code</div>'">
-        </div>
-      </div>
-
-      <!-- Charts Time Period Selector -->
-      <div style="display:flex;justify-content:space-between;align-items:center;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:8px 14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04);flex-wrap:wrap;gap:8px;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:16px;">📅</span>
-          <span style="font-weight:700;font-size:13px;color:#1e293b;">Charts Time Period Filter:</span>
-          <span style="font-size:11px;color:#64748b;">(Controls top 6 distribution/pareto charts &amp; Production Line comparison)</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <label for="chartsPeriodSelect" style="font-size:12px;font-weight:600;color:#475569;">Selected Period:</label>
-          <select id="chartsPeriodSelect" onchange="onChartsPeriodChange()" style="padding:5px 12px;border-radius:6px;border:1.5px solid #6366f1;font-weight:700;color:#1e293b;background:#f8fafc;font-size:12px;cursor:pointer;outline:none;">
-            <option value="all">All Time (Complete History)</option>
-          </select>
         </div>
       </div>
 
@@ -3447,7 +3500,7 @@ async function protectedExportToExcel(type) {
       if (select.dataset.populated === 'true') return;
       select.dataset.populated = 'true';
       const currentVal = select.value || 'all';
-      select.innerHTML = '<option value="all">All Time (Complete History)</option>';
+      select.innerHTML = '<option value="all">All Time</option>';
 
       const now = new Date();
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
