@@ -1750,7 +1750,7 @@
       return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
     }
 
-    function getFilteredData() {
+    function getFilteredData(excludeDate = false) {
       ensureFiltersState();
       const f = APP_STATE.uiFilters || {};
       const loc = canonicalLocationName(f.location);
@@ -1760,8 +1760,8 @@
       const defectType = String(f.defectType || '').trim();
       const severity = String(f.severity || '').trim();
       const action = String(f.action || '').trim();
-      const from = parseDateOnly(f.dateFrom);
-      const to = parseDateOnly(f.dateTo);
+      const from = !excludeDate ? parseDateOnly(f.dateFrom) : null;
+      const to = !excludeDate ? parseDateOnly(f.dateTo) : null;
       const toEnd = to ? new Date(to) : null;
       if (toEnd) toEnd.setDate(toEnd.getDate() + 1);
 
@@ -4169,6 +4169,7 @@ backgroundColor: '#ADB5E0',
 
 function updateStats() {
       const data = getFilteredData();
+      const dataNoDate = getFilteredData(true);
       const anchor = getEffectiveAnchorDate();
       // Get current and last month labels in MM:YY format (based on filter date)
       const now = new Date();
@@ -4178,24 +4179,24 @@ function updateStats() {
       lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
       const lastMonthName = monthLabel(lastMonthDate);
       
-// Update card labels dynamically - NO brackets
+      // Update card labels dynamically - NO brackets
       document.getElementById('currentMonthTotalLabel').textContent = `${currentMonthName} Total`;
       document.getElementById('lastMonthTotalLabel').textContent = `${lastMonthName} Total`;
       
       // Calculate Today's
       const todayStart = new Date(); 
       todayStart.setHours(0,0,0,0);
-      const todayCount = sumQuantities(data.filter(d => {
+      const todayCount = sumQuantities(dataNoDate.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= todayStart;
       }));
       
-// Calculate Last Working Day (yesterday) - PLANT WISE
+      // Calculate Last Working Day (yesterday) - PLANT WISE
       const yesterdayStart = new Date(todayStart);
       yesterdayStart.setDate(yesterdayStart.getDate() - 1);
       const yesterdayEnd = new Date(todayStart);
       
-      const yesterdayData = data.filter(d => {
+      const yesterdayData = dataNoDate.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= yesterdayStart && ts < yesterdayEnd;
       });
@@ -4222,7 +4223,45 @@ function updateStats() {
       const breakdownEl = document.getElementById('yesterdayBreakdown');
       if (breakdownEl) {
         let list = [];
-        if (isPuneScoped) {
+        const f = APP_STATE.uiFilters || {};
+        const filterPlantNorm = canonicalPlantName(f.plant);
+        const filterLocNorm = canonicalLocationName(f.location);
+
+        if (filterPlantNorm) {
+          // When a specific plant is selected in the filter, show ONLY that plant
+          const locLabel = f.location || (Object.keys(pairCounts)[0] ? Object.keys(pairCounts)[0].split('||')[0] : 'Pune');
+          list = [{
+            location: filterLocNorm || canonicalLocationName(locLabel),
+            locationLabel: locLabel,
+            plant: filterPlantNorm
+          }];
+        } else if (filterLocNorm) {
+          // When a specific location is selected, show only plants belonging to that location
+          const locKey = Object.keys(cfgLocs).find((k) => canonicalLocationName(k) === filterLocNorm) || f.location || filterLocNorm;
+          let plantsInLoc = Object.keys((cfgLocs[locKey] && cfgLocs[locKey].plants) || {}).sort();
+          if (!plantsInLoc.length) {
+            plantsInLoc = Object.keys(cfgPlants).filter((p) => {
+              const locs = (cfgPlants[p] && cfgPlants[p].locations) || [];
+              return locs.some((l) => canonicalLocationName(l) === filterLocNorm);
+            }).sort();
+          }
+          if (!plantsInLoc.length) {
+            plantsInLoc = inferPlantsFromUserMappings(filterLocNorm);
+          }
+          if (!plantsInLoc.length) {
+            const fromData = Object.keys(pairCounts)
+              .filter(k => k.startsWith(filterLocNorm + '||'))
+              .map(k => k.split('||')[1]);
+            plantsInLoc = Array.from(new Set(fromData));
+          }
+          if (filterLocNorm === 'pune' && !plantsInLoc.length) {
+            plantsInLoc = ['Plant-2', 'PGTL', 'NGM'];
+          }
+          list = plantsInLoc
+            .filter((p) => canViewPlant(p))
+            .map((p) => ({ location: filterLocNorm, locationLabel: locKey, plant: canonicalPlantName(p) }))
+            .filter((x) => x.plant);
+        } else if (isPuneScoped) {
           list = ['Plant-2', 'PGTL', 'NGM'].map((p) => ({ location: 'pune', locationLabel: 'Pune', plant: p }));
         } else if (isSingleLocationScoped) {
           const scopedLocRaw = String(allowedLocs[0] || '').trim();
@@ -4248,51 +4287,51 @@ function updateStats() {
             const [location, plant] = k.split('||');
             return { location, locationLabel: location, plant };
           });
-        }
-        // fallback: if no yesterday data/list, build from access + config so zero-count plants still render
-        if (!list.length) {
-          const locScope = allowedLocs.includes('*')
-            ? Object.keys(cfgLocs)
-            : allowedLocs;
-          const next = [];
-          locScope.forEach((locRaw) => {
-            const locNorm = canonicalLocationName(locRaw);
-            const locKey = Object.keys(cfgLocs).find((k) => canonicalLocationName(k) === locNorm) || String(locRaw || '').trim();
-            if (!locNorm) return;
-            if (!allowedPlants.includes('*')) {
-              allowedPlants.forEach((p) => {
-                const plant = canonicalPlantName(p);
-                if (plant) next.push({ location: locNorm, locationLabel: locKey || locNorm, plant });
-              });
-            } else {
-              let plantsInLoc = Object.keys((cfgLocs[locKey] && cfgLocs[locKey].plants) || {});
-              if (!plantsInLoc.length) {
-                plantsInLoc = Object.keys(cfgPlants).filter((p) => {
-                  const locs = (cfgPlants[p] && cfgPlants[p].locations) || [];
-                  return locs.some((l) => canonicalLocationName(l) === locNorm);
+          // fallback: if no yesterday data/list, build from access + config so zero-count plants still render
+          if (!list.length) {
+            const locScope = allowedLocs.includes('*')
+              ? Object.keys(cfgLocs)
+              : allowedLocs;
+            const next = [];
+            locScope.forEach((locRaw) => {
+              const locNorm = canonicalLocationName(locRaw);
+              const locKey = Object.keys(cfgLocs).find((k) => canonicalLocationName(k) === locNorm) || String(locRaw || '').trim();
+              if (!locNorm) return;
+              if (!allowedPlants.includes('*')) {
+                allowedPlants.forEach((p) => {
+                  const plant = canonicalPlantName(p);
+                  if (plant) next.push({ location: locNorm, locationLabel: locKey || locNorm, plant });
+                });
+              } else {
+                let plantsInLoc = Object.keys((cfgLocs[locKey] && cfgLocs[locKey].plants) || {});
+                if (!plantsInLoc.length) {
+                  plantsInLoc = Object.keys(cfgPlants).filter((p) => {
+                    const locs = (cfgPlants[p] && cfgPlants[p].locations) || [];
+                    return locs.some((l) => canonicalLocationName(l) === locNorm);
+                  });
+                }
+                if (!plantsInLoc.length) {
+                  plantsInLoc = inferPlantsFromUserMappings(locNorm);
+                }
+                plantsInLoc.forEach((p) => {
+                  const plant = canonicalPlantName(p);
+                  if (plant) next.push({ location: locNorm, locationLabel: locKey || locNorm, plant });
                 });
               }
-              if (!plantsInLoc.length) {
-                plantsInLoc = inferPlantsFromUserMappings(locNorm);
-              }
-              plantsInLoc.forEach((p) => {
-                const plant = canonicalPlantName(p);
-                if (plant) next.push({ location: locNorm, locationLabel: locKey || locNorm, plant });
-              });
-            }
-          });
-          list = next;
-        }
-        // final fallback for broad admins: show all visible config plants
-        if (!list.length) {
-          Object.keys(cfgLocs).forEach((locKey) => {
-            if (!canViewLocation(locKey)) return;
-            Object.keys((cfgLocs[locKey] && cfgLocs[locKey].plants) || {}).forEach((p) => {
-              if (!canViewPlant(p)) return;
-              const plant = canonicalPlantName(p);
-              if (plant) list.push({ location: canonicalLocationName(locKey), locationLabel: locKey, plant });
             });
-          });
+            list = next;
+          }
+          // final fallback for broad admins: show all visible config plants
+          if (!list.length) {
+            Object.keys(cfgLocs).forEach((locKey) => {
+              if (!canViewLocation(locKey)) return;
+              Object.keys((cfgLocs[locKey] && cfgLocs[locKey].plants) || {}).forEach((p) => {
+                if (!canViewPlant(p)) return;
+                const plant = canonicalPlantName(p);
+                if (plant) list.push({ location: canonicalLocationName(locKey), locationLabel: locKey, plant });
+              });
+            });
+          }
         }
         // de-dup
         const seen = new Set();
@@ -4302,11 +4341,12 @@ function updateStats() {
           seen.add(key);
           return true;
         });
-        const topThreePlants = list
+
+        let displayPlants = list
           .map((x) => {
             const loc = canonicalLocationName(x.location) || 'pune';
             const plant = canonicalPlantName(x.plant);
-            const count = pairCounts[`${loc}||${plant}`] || 0;
+            const count = filterPlantNorm ? lastWorkingDayCount : (pairCounts[`${loc}||${plant}`] || 0);
             return {
               location: loc,
               locationLabel: x.locationLabel || x.location,
@@ -4314,16 +4354,20 @@ function updateStats() {
               count
             };
           })
-          .filter((x) => x.plant)
-          .sort((a, b) => b.count - a.count || String(a.plant).localeCompare(String(b.plant)))
-          .slice(0, 3);
-        const html = topThreePlants.map((x) => {
+          .filter((x) => x.plant);
+
+        if (!filterPlantNorm) {
+          displayPlants.sort((a, b) => b.count - a.count || String(a.plant).localeCompare(String(b.plant)));
+          displayPlants = displayPlants.slice(0, 3);
+        }
+
+        const html = displayPlants.map((x) => {
           const loc = canonicalLocationName(x.location) || 'pune';
           const plant = canonicalPlantName(x.plant);
           const count = x.count || 0;
-          const showLoc = loc !== 'pune';
+          const showLoc = loc !== 'pune' && !filterLocNorm;
           const labelLoc = showLoc ? ` (${String(x.locationLabel || x.location)})` : '';
-          return `<div>${plant}${labelLoc}: ${count}</div>`;
+          return `<div>${escapeHtmlLocal(plant)}${labelLoc}: ${count}</div>`;
         }).join('');
         breakdownEl.innerHTML = html || '<div>No plants mapped</div>';
       }
@@ -4332,13 +4376,15 @@ function updateStats() {
       const currentMonth = new Date(anchor);
       currentMonth.setDate(1);
       currentMonth.setHours(0,0,0,0);
+      const currentMonthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0, 23, 59, 59, 999);
       const thisMonthCount = sumQuantities(data.filter(d => {
         const ts = toDate(d.timestamp);
-        return ts && ts >= currentMonth;
+        return ts && ts >= currentMonth && ts <= currentMonthEnd;
       }));
       
       // Calculate Avg Daily
-      const dayOfMonth = (anchor && anchor instanceof Date) ? anchor.getDate() : now.getDate();
+      const isCurrentCalendarMonth = (anchor.getFullYear() === now.getFullYear() && anchor.getMonth() === now.getMonth());
+      const dayOfMonth = isCurrentCalendarMonth ? now.getDate() : currentMonthEnd.getDate();
       const avgDaily = dayOfMonth > 0 ? (thisMonthCount / dayOfMonth).toFixed(1) : 0;
       
       // Calculate Last Month Total
@@ -4347,7 +4393,7 @@ function updateStats() {
       const lastMonthEnd = new Date(currentMonth);
       lastMonthEnd.setDate(0);
       lastMonthEnd.setHours(23,59,59,999);
-      const lastMonthCount = sumQuantities(data.filter(d => {
+      const lastMonthCount = sumQuantities(dataNoDate.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= lastMonth && ts <= lastMonthEnd;
       }));
@@ -4360,16 +4406,16 @@ function updateStats() {
         momSymbol = momChange >= 0 ? '↑' : '↓';
       }
       
-// Calculate Running Year (Aug'25 to Date)
+      // Calculate Running Year (Aug'25 to Date)
       const runningYearStart = new Date('2025-08-01T00:00:00');
-      const runningYearTotal = sumQuantities(data.filter(d => {
+      const runningYearTotal = sumQuantities(dataNoDate.filter(d => {
         const ts = toDate(d.timestamp);
         return ts && ts >= runningYearStart;
       }));
       
       // Update UI - ONLY elements that exist
       document.getElementById('todayLeakages').textContent = todayCount;
- document.getElementById('yesterdayTotal').textContent = lastWorkingDayCount;
+      document.getElementById('yesterdayTotal').textContent = lastWorkingDayCount;
       document.getElementById('avgDaily').textContent = avgDaily;
       document.getElementById('thisMonthLeakages').textContent = thisMonthCount;
       document.getElementById('lastMonthTotal').textContent = lastMonthCount;
@@ -4414,7 +4460,7 @@ function updateStats() {
 
       const counts = {};
       data.forEach(d => {
-        const p = d.plant || 'Unknown';
+        const p = canonicalPlantName(d.plant || '') || 'Unknown';
         counts[p] = (counts[p] || 0) + reportQuantity(d);
       });
       
@@ -4653,7 +4699,7 @@ function updateStats() {
 
       const counts = {};
       data.forEach(d => {
-        const line = d.productionLine || 'Unknown';
+        const line = d.productionLine || d.line || 'Unknown';
         counts[line] = (counts[line] || 0) + reportQuantity(d);
       });
 
@@ -4674,7 +4720,7 @@ function updateStats() {
       const labels = months.map(d => d.toLocaleDateString(undefined, { month: 'short' }));
       const now = new Date();
 
-      const plants = [...new Set(data.map(d => d.plant || 'Unknown'))];
+      const plants = [...new Set(data.map(d => canonicalPlantName(d.plant || '') || 'Unknown'))].filter(Boolean);
       const colors = ['#667eea', '#764ba2', '#f093fb', '#42A5F5', '#ef6c00', '#4CAF50'];
 
       const datasets = plants.map((plant, idx) => {
@@ -4697,7 +4743,7 @@ function updateStats() {
           
           return sumQuantities(data.filter(item => {
             const ts = toDate(item.timestamp);
-            return ts && ts >= monthStart && ts <= monthEnd && (item.plant || 'Unknown') === plant;
+            return ts && ts >= monthStart && ts <= monthEnd && (canonicalPlantName(item.plant || '') || 'Unknown') === plant;
           }));
         });
 
