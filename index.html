@@ -471,33 +471,33 @@
       <div class="stats-grid">
         <div class="stat-card blue">
           <div class="label">Today's</div>
-          <div class="stat-value" id="todayLeakages">0</div>
+          <div class="stat-value" id="todayLeakages" style="font-size:14px;font-weight:700;">- (Not Filled)</div>
         </div>
 
-<div class="stat-card red">
+        <div class="stat-card red">
           <div class="label">Yesterday</div>
-          <div class="stat-value" id="yesterdayTotal">0</div>
+          <div class="stat-value" id="yesterdayTotal" style="font-size:14px;font-weight:700;">- (Not Filled)</div>
           <div class="plant-breakdown" id="yesterdayBreakdown"></div>
         </div>
 
         <div class="stat-card teal">
           <div class="label">Avg Daily</div>
-          <div class="stat-value" id="avgDaily">0</div>
+          <div class="stat-value" id="avgDaily" style="font-size:14px;font-weight:700;">- (Not Filled)</div>
         </div>
 
         <div class="stat-card purple">
           <div class="label" id="currentMonthTotalLabel">Total</div>
-          <div class="stat-value" id="thisMonthLeakages">0</div>
+          <div class="stat-value" id="thisMonthLeakages" style="font-size:14px;font-weight:700;">- (Not Filled)</div>
         </div>
 
         <div class="stat-card orange">
           <div class="label" id="lastMonthTotalLabel">Total</div>
-          <div class="stat-value" id="lastMonthTotal">0</div>
+          <div class="stat-value" id="lastMonthTotal" style="font-size:14px;font-weight:700;">- (Not Filled)</div>
         </div>
 
         <div class="stat-card green">
           <div class="label">Aug'25 to Till Date</div>
-          <div class="stat-value" id="runningYearTotal">0</div>
+          <div class="stat-value" id="runningYearTotal" style="font-size:14px;font-weight:700;">- (Not Filled)</div>
         </div>
 
         <div class="stat-card" style="background:linear-gradient(135deg,#FF6B6B 0%,#FF5252 100%);color:#fff">
@@ -4466,13 +4466,29 @@ function updateStats() {
         return ts && ts >= runningYearStart;
       }));
       
+      // Helper to render KPI value: show '- (Not Filled)' when value is 0 (except M-o-M)
+      function renderKpiValue(elementId, val) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        const num = Number(val);
+        if (!val || isNaN(num) || num === 0) {
+          el.textContent = '- (Not Filled)';
+          el.style.fontSize = '14px';
+          el.style.fontWeight = '700';
+        } else {
+          el.textContent = val;
+          el.style.fontSize = '28px';
+          el.style.fontWeight = '900';
+        }
+      }
+
       // Update UI - ONLY elements that exist
-      document.getElementById('todayLeakages').textContent = todayCount;
-      document.getElementById('yesterdayTotal').textContent = lastWorkingDayCount;
-      document.getElementById('avgDaily').textContent = avgDaily;
-      document.getElementById('thisMonthLeakages').textContent = thisMonthCount;
-      document.getElementById('lastMonthTotal').textContent = lastMonthCount;
-      document.getElementById('runningYearTotal').textContent = runningYearTotal;
+      renderKpiValue('todayLeakages', todayCount);
+      renderKpiValue('yesterdayTotal', lastWorkingDayCount);
+      renderKpiValue('avgDaily', avgDaily);
+      renderKpiValue('thisMonthLeakages', thisMonthCount);
+      renderKpiValue('lastMonthTotal', lastMonthCount);
+      renderKpiValue('runningYearTotal', runningYearTotal);
       document.getElementById('momChange').textContent = momSymbol + ' ' + Math.abs(momChange) + '%';
     }
 
